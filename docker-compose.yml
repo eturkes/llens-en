@@ -26,6 +26,7 @@ services:
       - 'DOCLING_PARAMS={"do_ocr": false}'
       - BYPASS_EMBEDDING_AND_RETRIEVAL=true
       - ENABLE_PIP_INSTALL_FRONTMATTER_REQUIREMENTS=false
+      - ENABLE_EVALUATION_ARENA_MODELS=false
       - 'DEFAULT_PROMPT_SUGGESTIONS=[{"title":["はじめての方へ","LLENSの使い方"],"content":"はじめて使います。何ができるか教えてください。"}]'
     volumes:
       - open-webui-data:/app/backend/data
