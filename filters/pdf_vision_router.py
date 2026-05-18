@@ -1,6 +1,6 @@
 """
 title: PDF Vision Router
-author: LLENS 開発チーム
+author: Ken Enda
 version: 0.7.0
 required_open_webui_version: 0.5.0
 description: |

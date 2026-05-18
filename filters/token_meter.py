@@ -1,7 +1,7 @@
 """
 title: Token Meter
-author: LLENS
-version: 1.4.0
+author: Ken Enda
+version: 1.6.0
 required_open_webui_version: 0.5.0
 description: |
   SGLang から返ってくる本物の usage を使って、会話全体の context 使用率を表示する。
@@ -27,6 +27,13 @@ description: |
   chat_id でキーされた純粋な累積 state (chat_state dict) のみを置く。
 
 changelog:
+  1.6.0: 1) _fmt_num を 1024 ベースに変更 (262144 → "256.0k")。
+         2) context 使用率が閾値 (default 75%) を初めて超えたターンで、一度だけ
+            system message を注入してモデル自身に context 逼迫を知らせる。
+            注入位置は最新 user message の直前 (前段 prefix を破壊せず prompt
+            cache を温存)。閾値を下回ったら warned フラグをリセットして次回再警告。
+  1.5.0: inlet 時のみ末尾に「計算中」を出して、これがトークン使用量インジケータで
+         あることをユーザに気付かせる。stream/outlet で本来の数値表示に置換。
   1.4.0: 並行リクエスト時のセッション間漏洩を修正。Filter は OWUI singleton で共有
          される (app.state.FUNCTIONS) ため self.current_key / self.event_emitter
          に request 単位の値を保持すると、別ユーザーの WS に他チャットの数値を
@@ -51,10 +58,11 @@ logger = logging.getLogger(__name__)
 
 
 def _fmt_num(n: int) -> str:
-    if n >= 1_000_000:
-        return f"{n / 1_000_000:.1f}M"
-    if n >= 1000:
-        return f"{n / 1000:.1f}k"
+    # 1024 ベース。262144 (= 256 * 1024) を "256.0k" と表示するため。
+    if n >= 1024 * 1024:
+        return f"{n / (1024 * 1024):.1f}M"
+    if n >= 1024:
+        return f"{n / 1024:.1f}k"
     return str(n)
 
 
@@ -87,6 +95,21 @@ def _build(
     in_out = f"IN {_fmt_num(in_tokens)} / OUT {_fmt_num(out_tokens)}"
     total_str = f"{_fmt_num(total)}/{_fmt_num(context_size)}"
     return f"{sig} {pct:.1f}% {bar} | {total_str} | {in_out}"
+
+
+def _build_inlet(
+    in_tokens: int,
+    out_tokens: int,
+    context_size: int,
+    bar_length: int,
+) -> str:
+    # 初回ターン: 数値が無いので「計算中」だけを出す。
+    # 継続ターン: 前ターンまでの累計 + 末尾に「計算中…」を付けて、
+    #            このステータスがトークン使用量メーターであることを示す。
+    if in_tokens == 0 and out_tokens == 0:
+        return "⏳ トークン使用量を計算中…"
+    base = _build(in_tokens, out_tokens, context_size, bar_length)
+    return f"{base} … 計算中"
 
 
 def _chat_key(metadata: Optional[dict], user: Optional[dict]) -> Optional[str]:
@@ -128,6 +151,10 @@ class Filter:
             description="このモデルの context window (Kimi K2.6 = 262144)",
         )
         bar_length: int = Field(default=8, description="バーのマス数")
+        warn_threshold_pct: float = Field(
+            default=75.0,
+            description="この%を初めて超えたターンで一度だけ system 注入。0 で無効",
+        )
 
     def __init__(self):
         self.file_handler = False
@@ -136,10 +163,11 @@ class Filter:
         # OWUI singleton なので全 user/全 chat で共有されるが、key が chat_id なので
         # ここに値を入れる/読む分には他チャットを汚染しない。
         # state: {"in": int, "out": int, "prev_prompt": int|None, "prev_completion": int|None,
-        #         "emitter": Callable|None}
+        #         "emitter": Callable|None, "warned": bool}
         # emitter は stream() (sync) から最新 emit 先を引くために key 単位で保持する。
+        # warned は閾値超過 system 注入を一度だけにするためのフラグ。
         self.chat_state: dict[str, dict] = {}
-        logger.error("[TokenMeter] __init__ v1.4.0")
+        logger.error("[TokenMeter] __init__ v1.6.0")
 
     def _get_state(self, key: str) -> dict:
         if key not in self.chat_state:
@@ -149,8 +177,50 @@ class Filter:
                 "prev_prompt": None,
                 "prev_completion": None,
                 "emitter": None,
+                "warned": False,
             }
         return self.chat_state[key]
+
+    def _maybe_inject_warning(self, body: dict, state: dict) -> None:
+        threshold = self.valves.warn_threshold_pct
+        if threshold <= 0:
+            return
+        context_size = self.valves.context_size
+        if context_size <= 0:
+            return
+        total = state["in"] + state["out"]
+        pct = total / context_size * 100.0
+
+        # 閾値を下回ったら次回の超過で再度警告できるようリセット
+        if pct < threshold:
+            state["warned"] = False
+            return
+
+        if state["warned"]:
+            return
+
+        messages = body.get("messages")
+        if not isinstance(messages, list) or not messages:
+            return
+
+        remaining = max(0, context_size - total)
+        warning = (
+            f"[システム通知] コンテキスト使用率が {threshold:.0f}% を超えました "
+            f"(現在 {pct:.1f}%、残り約 {_fmt_num(remaining)} トークン)。"
+            "回答が context window 上限に達すると会話が途切れます。"
+            "適宜これまでの要点を要約・整理し、不要な引用や添付の繰り返しを避けてください。"
+        )
+
+        # 最新 user message の直前に挿入。前段の prefix を破壊しないので prompt cache が温存される。
+        insert_pos = len(messages) - 1
+        if messages[insert_pos].get("role") != "user":
+            insert_pos = len(messages)
+        messages.insert(insert_pos, {"role": "system", "content": warning})
+        body["messages"] = messages
+        state["warned"] = True
+        logger.error(
+            f"[TokenMeter] WARN injected pct={pct:.1f} threshold={threshold:.0f}"
+        )
 
     # --------------------------------------------------------
     # inlet
@@ -182,7 +252,10 @@ class Filter:
         # stream() (sync) から後で参照するため emitter を chat key 単位で保持
         state["emitter"] = __event_emitter__
 
-        description = _build(
+        # 閾値超過なら system 注入 (一度だけ)
+        self._maybe_inject_warning(body, state)
+
+        description = _build_inlet(
             state["in"],
             state["out"],
             self.valves.context_size,
