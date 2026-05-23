@@ -166,7 +166,9 @@ class Tools:
         2) chat:message:files event で UI に即時反映 (merged list を流す)
         chat_id / message_id が無ければ persist をスキップして emit だけ行う
         (tool テスト用フォールバック)。"""
+        # OWUI root logger は WARNING のため、診断は error レベルで出す (token_meter と同パターン)
         merged = list(attachments)
+        persisted = False
         if Chats is not None and chat_id and message_id:
             try:
                 result = await Chats.add_message_files_by_id_and_message_id(
@@ -174,14 +176,29 @@ class Tools:
                 )
                 if result is not None:
                     merged = result
+                persisted = True
             except Exception as e:
                 logger.error(f"[mount_tool] persist failed: {e!r} (emit のみで継続)")
+        else:
+            logger.error(
+                f"[mount_tool] persist SKIP "
+                f"(Chats={Chats is not None}, chat_id={bool(chat_id)}, "
+                f"message_id={bool(message_id)}) — emit のみ"
+            )
 
+        emitted = False
         if __event_emitter__:
             await __event_emitter__({
                 "type": "chat:message:files",
                 "data": {"files": merged},
             })
+            emitted = True
+
+        logger.error(
+            f"[mount_tool] _persist_and_emit_files done "
+            f"(new={len(attachments)}, merged={len(merged)}, "
+            f"persisted={persisted}, emitted={emitted})"
+        )
 
     async def _status(self, msg, done, __event_emitter__):
         if self.valves.debug and __event_emitter__:
@@ -215,6 +232,13 @@ class Tools:
             return "ERROR: open_webui の内部 API を解決できません（実行環境を確認）。"
         if not __user__ or not __user__.get("id"):
             return "ERROR: ユーザー情報が取得できませんでした。"
+
+        ctx_count = sum(1 for _ in _iter_context_files(__files__, __metadata__))
+        logger.error(
+            f"[mount_tool] mount_markdown entry filter={filename!r} "
+            f"chat_id={__chat_id__!r} message_id={__message_id__!r} "
+            f"ctx_files={ctx_count}"
+        )
 
         await self._status("Resolving attached files...", False, __event_emitter__)
 
@@ -287,6 +311,13 @@ class Tools:
             return "ERROR: open_webui の内部 API を解決できません。"
         if not __user__ or not __user__.get("id"):
             return "ERROR: ユーザー情報が取得できませんでした。"
+
+        ctx_count = sum(1 for _ in _iter_context_files(__files__, __metadata__))
+        logger.error(
+            f"[mount_tool] mount_file entry filter={filename!r} "
+            f"chat_id={__chat_id__!r} message_id={__message_id__!r} "
+            f"ctx_files={ctx_count}"
+        )
 
         targets = []
         report = []
