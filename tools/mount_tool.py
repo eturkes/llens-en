@@ -2,8 +2,23 @@
 title: Mount Tools
 description: 添付ファイルの docling 抽出テキストを .md として登録し、Pyodide の /mnt/uploads/ に出現させる。既存ファイルの /mnt 再マウントも行う。
 author: Ken Enda
-version: 0.1.0
+version: 0.2.0
 required_open_webui_version: 0.5.0
+
+changelog:
+  0.2.0: 1) chat:message:files を emit するだけだったのを、OWUI 公式パターン
+            (tools/builtin.py の画像生成 tool) に合わせて
+            Chats.add_message_files_by_id_and_message_id() で chat 履歴 DB に
+            persist してから emit するよう修正。これまで添付がメッセージに永続化されず、
+            ターン跨ぎ・reload・Pyodide の /mnt/uploads 取り込みに不安定だった。
+         2) mount_markdown / mount_file に __chat_id__ / __message_id__ 引数を追加
+            (OWUI が tool 呼び出し時に自動 inject する context)。
+         3) Storage.upload_file の旧 2-arg signature 試行を撤去し、新シグネチャ
+            (file, filename, tags) 一本化。古い OWUI との互換は捨てる。
+         4) replace_message_files valve を削除。OWUI 公開 API は append 系のみで、
+            既存添付を消す経路が無いため (DB を直接書き換えるしかなくなる)
+            valve を残しても無意味と判断。
+  0.1.0: 初版。
 """
 
 # =============================================================================
@@ -12,30 +27,31 @@ required_open_webui_version: 0.5.0
 # Pyodide の /mnt/uploads/ はブラウザ側（IDBFS）にある。バックエンドの Tool は
 # そこへ直接書けない。ファイルが /mnt に出る唯一の経路は:
 #   1. Open WebUI に「実ファイル（file_id 付き・/content で取得可能）」として登録
-#   2. そのファイルをメッセージの files に添付
+#   2. そのファイルを assistant message の files に persist + UI 通知
 #   3. コード実行前にフロントが getFileContentById() で取得し Pyodide FS へ展開
-# 本ツールは 1 を Files API で行い、2 を chat:message:files イベントで行う。
-#
-# 【検証が必要な2点】お使いのバージョンで先に確認すること（debug=True で確認可）:
-#   (A) chat:message:files の data スキーマ。ここでは {"files": [...]} を仮定。
-#       UI に添付が出れば概ね正しい。出ない場合は下の _emit_files を調整。
-#   (B) 添付が「同一ターンのコード実行」で /mnt に同期されるか。少なくとも
-#       次のコード実行では出るはず（通常アップロードと同じ経路のため）。
-#       docstring でモデルに「コードを書く前に呼べ」と指示してある。
+# 本ツールは 1 を Files API、2 を Chats.add_message_files_by_id_and_message_id +
+# chat:message:files event で行う (= OWUI 同梱の画像生成 tool と同じパターン)。
+# persist と event の両方を出すことで、同一ターンの即時表示と、ターン跨ぎ /
+# reload 後の永続表示の両方を担保する。
 # =============================================================================
 
 import io
+import logging
 import os
 import uuid
 from typing import Optional, Callable, Any, Awaitable
 
 from pydantic import BaseModel, Field
 
+logger = logging.getLogger(__name__)
+
 # --- Open WebUI 内部 API（ランタイムで解決される） ---------------------------
 try:
+    from open_webui.models.chats import Chats
     from open_webui.models.files import Files, FileForm
     from open_webui.storage.provider import Storage
 except Exception:  # ローカルでの静的解析用フォールバック
+    Chats = None
     Files = None
     FileForm = None
     Storage = None
@@ -45,15 +61,9 @@ except Exception:  # ローカルでの静的解析用フォールバック
 # 低レベルヘルパ
 # -----------------------------------------------------------------------------
 def _storage_upload(data: bytes, filename: str):
-    """Storage.upload_file の version 差（tags 引数の有無）を吸収して
-    (contents, path) を返す。"""
-    bio = io.BytesIO(data)
-    try:
-        return Storage.upload_file(bio, filename)  # 旧シグネチャ (file, filename)
-    except TypeError:
-        bio.seek(0)
-        # 新しめのバージョンは tags 引数を要求する
-        return Storage.upload_file(bio, filename, {})
+    """Storage.upload_file (file, filename, tags) を呼び (contents, path) を返す。
+    OWUI 0.5+ は tags 引数必須 (provider.py の abstractmethod 定義通り)。"""
+    return Storage.upload_file(io.BytesIO(data), filename, {})
 
 
 def _register_text_file(user_id: str, display_name: str, text: str,
@@ -138,9 +148,6 @@ class Tools:
     class Valves(BaseModel):
         markdown_suffix: str = Field(
             default=".md", description="派生テキストファイルの拡張子")
-        replace_message_files: bool = Field(
-            default=False,
-            description="True なら既存添付を置換、False なら追加（既存を保ったまま追記）")
         debug: bool = Field(default=False, description="詳細ログを status で流す")
 
     class UserValves(BaseModel):
@@ -149,25 +156,32 @@ class Tools:
     def __init__(self):
         self.valves = self.Valves()
 
-    # ---- 共通: chat:message:files の発火 ------------------------------------
-    async def _emit_files(self, attachments, existing, __event_emitter__):
-        """添付リストをメッセージに反映。replace_message_files=False のときは
-        既存添付（元PDF等）を保ったまま新規を追記する。"""
-        if not __event_emitter__:
-            return
-        files = list(attachments)
-        if not self.valves.replace_message_files and existing:
-            # 既存をそのまま前置（重複 id は除く）
-            seen = {a.get("id") for a in files}
-            for e in existing:
-                eid = e.get("id") or e.get("file", {}).get("id")
-                if eid and eid not in seen:
-                    files.insert(0, e)
-        # (A) ここがバージョン依存ポイント
-        await __event_emitter__({
-            "type": "chat:message:files",
-            "data": {"files": files},
-        })
+    # ---- 共通: persist + chat:message:files の発火 -------------------------
+    async def _persist_and_emit_files(
+        self, attachments, chat_id, message_id, __event_emitter__,
+    ):
+        """新規添付をメッセージに反映。OWUI 標準パターン:
+        1) Chats.add_message_files_by_id_and_message_id() で chat 履歴 DB に append
+           (既存 message.files に新規ぶんだけ追加。返り値は merged list)
+        2) chat:message:files event で UI に即時反映 (merged list を流す)
+        chat_id / message_id が無ければ persist をスキップして emit だけ行う
+        (tool テスト用フォールバック)。"""
+        merged = list(attachments)
+        if Chats is not None and chat_id and message_id:
+            try:
+                result = await Chats.add_message_files_by_id_and_message_id(
+                    chat_id, message_id, list(attachments),
+                )
+                if result is not None:
+                    merged = result
+            except Exception as e:
+                logger.error(f"[mount_tool] persist failed: {e!r} (emit のみで継続)")
+
+        if __event_emitter__:
+            await __event_emitter__({
+                "type": "chat:message:files",
+                "data": {"files": merged},
+            })
 
     async def _status(self, msg, done, __event_emitter__):
         if self.valves.debug and __event_emitter__:
@@ -186,6 +200,8 @@ class Tools:
         __files__: Optional[list] = None,
         __metadata__: Optional[dict] = None,
         __event_emitter__: Optional[Callable[[Any], Awaitable[None]]] = None,
+        __chat_id__: Optional[str] = None,
+        __message_id__: Optional[str] = None,
     ) -> str:
         """
         添付ドキュメントの docling 抽出済みテキストを Markdown ファイル(.md)として
@@ -202,7 +218,6 @@ class Tools:
 
         await self._status("Resolving attached files...", False, __event_emitter__)
 
-        existing = [f for _, _, f in _iter_context_files(__files__, __metadata__)]
         made = []
         report = []
 
@@ -231,7 +246,9 @@ class Tools:
             await self._status("No markdown mounted.", True, __event_emitter__)
             return "マウント対象がありませんでした。\n" + "\n".join(report)
 
-        await self._emit_files(made, existing, __event_emitter__)
+        await self._persist_and_emit_files(
+            made, __chat_id__, __message_id__, __event_emitter__,
+        )
         await self._status(f"Mounted {len(made)} markdown file(s).", True,
                            __event_emitter__)
         return (
@@ -255,6 +272,8 @@ class Tools:
         __files__: Optional[list] = None,
         __metadata__: Optional[dict] = None,
         __event_emitter__: Optional[Callable[[Any], Awaitable[None]]] = None,
+        __chat_id__: Optional[str] = None,
+        __message_id__: Optional[str] = None,
     ) -> str:
         """
         チャットコンテキストの既存ファイル（アップロード済み or ナレッジ）を
@@ -269,7 +288,6 @@ class Tools:
         if not __user__ or not __user__.get("id"):
             return "ERROR: ユーザー情報が取得できませんでした。"
 
-        existing = [f for _, _, f in _iter_context_files(__files__, __metadata__)]
         targets = []
         report = []
 
@@ -294,7 +312,9 @@ class Tools:
             return (f"'{filename}' に一致する既存ファイルが見つかりませんでした。\n"
                     + "\n".join(report))
 
-        await self._emit_files(targets, existing, __event_emitter__)
+        await self._persist_and_emit_files(
+            targets, __chat_id__, __message_id__, __event_emitter__,
+        )
         await self._status(f"Mounted {len(targets)} file(s).", True,
                            __event_emitter__)
         return (f"{len(targets)} 件を /mnt/uploads/ にマウントしました。\n"
