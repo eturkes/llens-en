@@ -2,8 +2,8 @@
 """
 OWUI Functions / Tools 同期スクリプト
 
-filters/*.py → /api/v1/functions/  (Function: filter / pipe / action)
-tools/*.py   → /api/v1/tools/      (Tool: モデルが呼び出す function-calling)
+owui/filters/*.py → /api/v1/functions/  (Function: filter / pipe / action)
+owui/tools/*.py   → /api/v1/tools/      (Tool: モデルが呼び出す function-calling)
 
 それぞれ GET で存在確認 → update or create。べき等。
 Function は create 後に /toggle と /toggle/global を叩いて active=True, global=True にする
@@ -14,7 +14,7 @@ Function は create 後に /toggle と /toggle/global を叩いて active=True, 
   OWUI_BASE_URL  - default http://localhost:8080
 
 使い方:
-  ./scripts/owui/sync.py             # filters/ tools/ 両方
+  ./scripts/owui/sync.py             # owui/filters/ owui/tools/ 両方
   ./scripts/owui/sync.py mount_tool  # 個別指定 (拡張子なし、複数可)
 """
 
@@ -34,13 +34,13 @@ ENV_PATH = REPO_ROOT / ".env"
 # kind 別の dir / endpoint / 初回トグル
 KINDS: dict[str, dict] = {
     "filter": {
-        "dir": REPO_ROOT / "filters",
+        "dir": REPO_ROOT / "owui" / "filters",
         "api_prefix": "/api/v1/functions",
         # create 直後は両 False。OWUI 設計上、ここを True にしないと load されない。
         "post_create_toggles": ["toggle", "toggle/global"],
     },
     "tool": {
-        "dir": REPO_ROOT / "tools",
+        "dir": REPO_ROOT / "owui" / "tools",
         "api_prefix": "/api/v1/tools",
         # tool は toggle endpoint なし。access は /access/update で別途管理
         "post_create_toggles": [],
@@ -167,7 +167,7 @@ def sync_one(
 
 
 def discover_targets(only: set[str]) -> list[tuple[pathlib.Path, str]]:
-    """filters/*.py と tools/*.py を kind 付きで列挙。only 指定があればその id だけに絞る。"""
+    """owui/filters/*.py と owui/tools/*.py を kind 付きで列挙。only 指定があればその id だけに絞る。"""
     targets: list[tuple[pathlib.Path, str]] = []
     for kind, cfg in KINDS.items():
         for f in sorted(cfg["dir"].glob("*.py")):
@@ -202,7 +202,7 @@ def main() -> int:
             return 1
     if not targets:
         print(
-            f"対象なし (filters/ tools/ に *.py が無い、または only 指定にマッチせず)",
+            f"対象なし (owui/filters/ owui/tools/ に *.py が無い、または only 指定にマッチせず)",
             file=sys.stderr,
         )
         return 1
