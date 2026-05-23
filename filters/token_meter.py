@@ -1,7 +1,7 @@
 """
 title: Token Meter
 author: Ken Enda
-version: 1.6.0
+version: 1.7.0
 required_open_webui_version: 0.5.0
 description: |
   SGLang から返ってくる本物の usage を使って、会話全体の context 使用率を表示する。
@@ -27,6 +27,12 @@ description: |
   chat_id でキーされた純粋な累積 state (chat_state dict) のみを置く。
 
 changelog:
+  1.7.0: 単一閾値 warn_threshold_pct を warn_levels: list[WarnLevel(pct, message)] に
+         一般化。pct と注入メッセージを 1 ペアで持ち、任意段数の閾値を定義可能。
+         default は 50% / 80% の 2 段で、message はユーザー向け文言ではなく
+         「モデルに対する行動指示」として書き直し (簡潔応答指示、新規長尺タスク抑止 等)。
+         同ターンで複数閾値を跨いだ場合は最高位だけ発火・低位は済み扱い (ノイズ防止)、
+         各 pct を下回れば個別リセット → 次回超過で再警告。空配列で機能無効。
   1.6.0: 1) _fmt_num を 1024 ベースに変更 (262144 → "256.0k")。
          2) context 使用率が閾値 (default 75%) を初めて超えたターンで、一度だけ
             system message を注入してモデル自身に context 逼迫を知らせる。
@@ -143,6 +149,29 @@ async def _emit(
         logger.error(f"[TokenMeter] emit FAIL: {e!r}")
 
 
+class WarnLevel(BaseModel):
+    pct: float = Field(description="閾値 (%)。この%を初めて超えたターンに message を 1 度注入")
+    message: str = Field(description="注入する system message 本文")
+
+
+_DEFAULT_LEVELS: list[WarnLevel] = [
+    WarnLevel(
+        pct=50.0,
+        message=(
+            "以降の応答は簡潔さを優先し、長文引用や過去発言の繰り返しを避けること。"
+            "ユーザーが新たに大きな資料を投入してきた場合は、取り込み前に既存 context の要約を提案すること。"
+        ),
+    ),
+    WarnLevel(
+        pct=80.0,
+        message=(
+            "上限到達が近い。新しい長尺タスクは開始せず、現ターンで保存すべき結論・"
+            "状態・コード差分を明示すること。継続作業が必要ならユーザーに別チャットへの分割を促すこと。"
+        ),
+    ),
+]
+
+
 class Filter:
     class Valves(BaseModel):
         priority: int = Field(default=100, description="他 filter より後に動かす")
@@ -151,9 +180,13 @@ class Filter:
             description="このモデルの context window (Kimi K2.6 = 262144)",
         )
         bar_length: int = Field(default=8, description="バーのマス数")
-        warn_threshold_pct: float = Field(
-            default=75.0,
-            description="この%を初めて超えたターンで一度だけ system 注入。0 で無効",
+        warn_levels: list[WarnLevel] = Field(
+            default_factory=lambda: list(_DEFAULT_LEVELS),
+            description=(
+                "context 使用率の閾値とメッセージのペア。"
+                "昇順に評価し、同ターンで複数跨いだら最高位だけ発火 (低位は済み扱い)。"
+                "各 pct を下回れば個別リセットされ次回超過で再警告。空配列で機能無効。"
+            ),
         )
 
     def __init__(self):
@@ -163,11 +196,11 @@ class Filter:
         # OWUI singleton なので全 user/全 chat で共有されるが、key が chat_id なので
         # ここに値を入れる/読む分には他チャットを汚染しない。
         # state: {"in": int, "out": int, "prev_prompt": int|None, "prev_completion": int|None,
-        #         "emitter": Callable|None, "warned": bool}
+        #         "emitter": Callable|None, "warned": set[float]}
         # emitter は stream() (sync) から最新 emit 先を引くために key 単位で保持する。
-        # warned は閾値超過 system 注入を一度だけにするためのフラグ。
+        # warned は超過 system 注入を 1 度だけにするための、発火済 pct 値の集合。
         self.chat_state: dict[str, dict] = {}
-        logger.error("[TokenMeter] __init__ v1.6.0")
+        logger.error("[TokenMeter] __init__ v1.7.0")
 
     def _get_state(self, key: str) -> dict:
         if key not in self.chat_state:
@@ -177,26 +210,29 @@ class Filter:
                 "prev_prompt": None,
                 "prev_completion": None,
                 "emitter": None,
-                "warned": False,
+                "warned": set(),
             }
         return self.chat_state[key]
 
     def _maybe_inject_warning(self, body: dict, state: dict) -> None:
-        threshold = self.valves.warn_threshold_pct
-        if threshold <= 0:
-            return
+        levels = [lvl for lvl in (self.valves.warn_levels or []) if lvl.pct > 0]
         context_size = self.valves.context_size
-        if context_size <= 0:
+        if not levels or context_size <= 0:
             return
         total = state["in"] + state["out"]
         pct = total / context_size * 100.0
 
-        # 閾値を下回ったら次回の超過で再度警告できるようリセット
-        if pct < threshold:
-            state["warned"] = False
-            return
+        # 下回った閾値は warned から除外して、次回超過で再警告できるよう
+        state["warned"] = {t for t in state["warned"] if pct >= t}
 
-        if state["warned"]:
+        # 昇順に並べ、最高位の「超過 & 未警告」を 1 つだけ発火
+        sorted_levels = sorted(levels, key=lambda lvl: lvl.pct)
+        fired: Optional[WarnLevel] = None
+        for lvl in reversed(sorted_levels):
+            if pct >= lvl.pct and lvl.pct not in state["warned"]:
+                fired = lvl
+                break
+        if fired is None:
             return
 
         messages = body.get("messages")
@@ -204,11 +240,12 @@ class Filter:
             return
 
         remaining = max(0, context_size - total)
+        # モデル宛の指示としてマーカーを明示し、context メタ情報を続ける。
+        # ユーザー向け文言ではなく、モデルが従うべき行動指針を message に書く。
         warning = (
-            f"[システム通知] コンテキスト使用率が {threshold:.0f}% を超えました "
-            f"(現在 {pct:.1f}%、残り約 {_fmt_num(remaining)} トークン)。"
-            "回答が context window 上限に達すると会話が途切れます。"
-            "適宜これまでの要点を要約・整理し、不要な引用や添付の繰り返しを避けてください。"
+            f"[システム指示] context 使用率 {pct:.1f}% "
+            f"(閾値 {fired.pct:.0f}% 超過、残り約 {_fmt_num(remaining)} トークン)。"
+            f"{fired.message}"
         )
 
         # 最新 user message の直前に挿入。前段の prefix を破壊しないので prompt cache が温存される。
@@ -217,9 +254,13 @@ class Filter:
             insert_pos = len(messages)
         messages.insert(insert_pos, {"role": "system", "content": warning})
         body["messages"] = messages
-        state["warned"] = True
+
+        # 高位発火時は同ターンの低位通知を包含する (2 通連投しない)
+        state["warned"].update(
+            {lvl.pct for lvl in sorted_levels if lvl.pct <= fired.pct}
+        )
         logger.error(
-            f"[TokenMeter] WARN injected pct={pct:.1f} threshold={threshold:.0f}"
+            f"[TokenMeter] WARN injected pct={pct:.1f} fired_threshold={fired.pct:.0f}"
         )
 
     # --------------------------------------------------------
@@ -375,3 +416,4 @@ class Filter:
         )
         await _emit(__event_emitter__, description)
         return body
+
