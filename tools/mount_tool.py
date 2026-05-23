@@ -18,6 +18,11 @@ changelog:
          4) replace_message_files valve を削除。OWUI 公開 API は append 系のみで、
             既存添付を消す経路が無いため (DB を直接書き換えるしかなくなる)
             valve を残しても無意味と判断。
+         5) __files__ / __metadata__.files が空の時に __chat_id__ を使って chat 履歴を
+            walk し、過去ターンの user message に添付されたファイル群を fallback として
+            利用するようにした。OWUI middleware は __files__ に「今ターン submit ぶんの
+            files」しか入れないため、ユーザーが添付した次以降のターンで tool が呼ばれると
+            ctx_files=0 になって何も処理できなかった。
   0.1.0: 初版。
 """
 
@@ -207,6 +212,56 @@ class Tools:
                 "data": {"description": msg, "done": done},
             })
 
+    # ---- context files の解決 -----------------------------------------------
+    async def _resolve_context_files(
+        self,
+        __files__: Optional[list],
+        __metadata__: Optional[dict],
+        __chat_id__: Optional[str],
+        __user__: Optional[dict],
+    ) -> list:
+        """tool に渡る context のファイル列を解決する。
+        1) __files__ / __metadata__.files (今ターン submit 分) を優先
+        2) それが空のとき __chat_id__ で chat 履歴を取得し、各 message の files を
+           walk して過去ターン添付ぶんを集める (id でデデュープ)
+        返り値は _iter_context_files と同じ (file_id, filename, raw_dict) のリスト。"""
+        direct = list(_iter_context_files(__files__, __metadata__))
+        if direct:
+            return direct
+        if Chats is None or not __chat_id__:
+            return []
+        try:
+            uid = (__user__ or {}).get("id")
+            if uid:
+                chat = await Chats.get_chat_by_id_and_user_id(__chat_id__, uid)
+            else:
+                chat = await Chats.get_chat_by_id(__chat_id__)
+        except Exception as e:
+            logger.error(f"[mount_tool] chat history lookup failed: {e!r}")
+            return []
+        if chat is None:
+            return []
+
+        messages = (getattr(chat, "chat", None) or {}).get("history", {}).get("messages", {})
+        history_files: list = []
+        seen: set = set()
+        for m in messages.values():
+            for f in m.get("files") or []:
+                if not isinstance(f, dict):
+                    continue
+                fid = f.get("id") or (f.get("file") or {}).get("id")
+                if fid and fid not in seen:
+                    seen.add(fid)
+                    history_files.append(f)
+
+        resolved = list(_iter_context_files(history_files, None))
+        if resolved:
+            logger.error(
+                f"[mount_tool] history fallback hit "
+                f"chat_id={__chat_id__} files={len(resolved)}"
+            )
+        return resolved
+
     # =========================================================================
     # mount_markdown
     # =========================================================================
@@ -233,11 +288,13 @@ class Tools:
         if not __user__ or not __user__.get("id"):
             return "ERROR: ユーザー情報が取得できませんでした。"
 
-        ctx_count = sum(1 for _ in _iter_context_files(__files__, __metadata__))
+        ctx = await self._resolve_context_files(
+            __files__, __metadata__, __chat_id__, __user__,
+        )
         logger.error(
             f"[mount_tool] mount_markdown entry filter={filename!r} "
             f"chat_id={__chat_id__!r} message_id={__message_id__!r} "
-            f"ctx_files={ctx_count}"
+            f"ctx_files={len(ctx)}"
         )
 
         await self._status("Resolving attached files...", False, __event_emitter__)
@@ -245,7 +302,7 @@ class Tools:
         made = []
         report = []
 
-        for fid, fname, _ref in _iter_context_files(__files__, __metadata__):
+        for fid, fname, _ref in ctx:
             if not _match(fname, filename):
                 continue
             rec = Files.get_file_by_id(fid)
@@ -312,17 +369,19 @@ class Tools:
         if not __user__ or not __user__.get("id"):
             return "ERROR: ユーザー情報が取得できませんでした。"
 
-        ctx_count = sum(1 for _ in _iter_context_files(__files__, __metadata__))
+        ctx = await self._resolve_context_files(
+            __files__, __metadata__, __chat_id__, __user__,
+        )
         logger.error(
             f"[mount_tool] mount_file entry filter={filename!r} "
             f"chat_id={__chat_id__!r} message_id={__message_id__!r} "
-            f"ctx_files={ctx_count}"
+            f"ctx_files={len(ctx)}"
         )
 
         targets = []
         report = []
 
-        for fid, fname, ref in _iter_context_files(__files__, __metadata__):
+        for fid, fname, ref in ctx:
             if not _match(fname, filename):
                 continue
             rec = Files.get_file_by_id(fid)

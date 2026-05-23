@@ -33,6 +33,9 @@ changelog:
          「モデルに対する行動指示」として書き直し (簡潔応答指示、新規長尺タスク抑止 等)。
          同ターンで複数閾値を跨いだ場合は最高位だけ発火・低位は済み扱い (ノイズ防止)、
          各 pct を下回れば個別リセット → 次回超過で再警告。空配列で機能無効。
+         加えて debug_inject_context valve (default True) を新設し、毎 inlet で現在の
+         context 使用率を system message として注入する debug 経路を追加。モデルが
+         system 注入を実際に読んでるかを検証するための一時的なライン (確認後 OFF 推奨)。
   1.6.0: 1) _fmt_num を 1024 ベースに変更 (262144 → "256.0k")。
          2) context 使用率が閾値 (default 75%) を初めて超えたターンで、一度だけ
             system message を注入してモデル自身に context 逼迫を知らせる。
@@ -188,6 +191,13 @@ class Filter:
                 "各 pct を下回れば個別リセットされ次回超過で再警告。空配列で機能無効。"
             ),
         )
+        debug_inject_context: bool = Field(
+            default=True,
+            description=(
+                "デバッグ用: 毎 inlet で現在の context 使用率を system message として注入する。"
+                "モデルが system message を読んでるか検証する目的、不要になったら OFF。"
+            ),
+        )
 
     def __init__(self):
         self.file_handler = False
@@ -263,6 +273,34 @@ class Filter:
             f"[TokenMeter] WARN injected pct={pct:.1f} fired_threshold={fired.pct:.0f}"
         )
 
+    def _inject_context_debug(self, body: dict, state: dict) -> None:
+        """毎 inlet で現在の token usage を system message として注入する debug 経路。
+        モデルが system 注入を実際に読んでるかを検証するため、threshold warning とは別ラインで
+        常時流す。Valves.debug_inject_context が False なら no-op。"""
+        if not self.valves.debug_inject_context:
+            return
+        context_size = self.valves.context_size
+        if context_size <= 0:
+            return
+        messages = body.get("messages")
+        if not isinstance(messages, list) or not messages:
+            return
+
+        total = state["in"] + state["out"]
+        pct = total / context_size * 100.0
+        msg = (
+            f"[context-status] in={state['in']} out={state['out']} "
+            f"total={total}/{context_size} ({pct:.2f}%) "
+            f"[human: in={_fmt_num(state['in'])} out={_fmt_num(state['out'])} "
+            f"total={_fmt_num(total)}/{_fmt_num(context_size)}]"
+        )
+        insert_pos = len(messages) - 1
+        if messages[insert_pos].get("role") != "user":
+            insert_pos = len(messages)
+        messages.insert(insert_pos, {"role": "system", "content": msg})
+        body["messages"] = messages
+        logger.error(f"[TokenMeter] context-status injected: {msg}")
+
     # --------------------------------------------------------
     # inlet
     # --------------------------------------------------------
@@ -295,6 +333,9 @@ class Filter:
 
         # 閾値超過なら system 注入 (一度だけ)
         self._maybe_inject_warning(body, state)
+
+        # debug: 毎ターン現在の context 使用率を system 注入 (valve で OFF 可)
+        self._inject_context_debug(body, state)
 
         description = _build_inlet(
             state["in"],
