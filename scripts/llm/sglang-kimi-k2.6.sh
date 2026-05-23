@@ -29,18 +29,21 @@ args=(
 )
 
 if [[ "$EAGLE" == "1" ]]; then
-  # EAGLE3 + Kimi K2.6 (MLA) で long context が MLA chunked_kv_core 経路に分岐すると、
-  # その中の MHA sub-call (flashattention_backend.py:771) で
+  # EAGLE3 + Kimi K2.6 (MLA) は 0.5.10 で long context が MLA chunked_kv_core 経路に
+  # 分岐すると flashattention_backend.py の MHA sub-call にある
   #   assert not get_global_server_args().disable_chunked_prefix_cache
-  # を踏んで落ちる SGLang 0.5.10 のバグ。
-  # - --attention-backend flashmla: draft (Llama 系 EAGLE3) の init で kv_lora_rank
-  #   属性を要求して別 crash
-  # - --attention-backend fa3: 内部的に同じ flashattention_backend を経由するため
-  #   同じ assert を踏む (実測でハーフコンテキスト級で再現)
-  # 残る回避策として dispatcher が chunked_prefix 経路を選ばないように明示。
-  export SGLANG_ENABLE_SPEC_V2=1
+  # を踏んで落ちるバグがあり、以下 2 行を併用してた:
+  #     export SGLANG_ENABLE_SPEC_V2=1
+  #     --disable-chunked-prefix-cache
+  # 0.5.12 では Spec V2 が default 化、かつ該当 if 分岐に
+  #   not forward_batch.forward_mode.is_draft_extend(include_v2=True)
+  # ガードが追加されて EAGLE Spec V2 経路は除外される構造になったため両方外して検証中。
+  # 過去の dead-end (結果的に無効だったオプション。再度試さないための戒め):
+  #   --attention-backend flashmla : draft (Llama 系 EAGLE3) init で kv_lora_rank crash
+  #   --attention-backend fa3      : 同じ flashattention_backend 経由で同 assert
+  # 元バグは long context (実測ハーフコンテキスト級 ~130K) で再現するため検証も同スケールで。
+  # long context で落ちたら上記 2 行を復活させる。
   args+=(
-    --disable-chunked-prefix-cache
     --speculative-algorithm EAGLE3
     --speculative-draft-model-path ./models/Kimi-K2.6-eagle3
     --speculative-num-steps 3
