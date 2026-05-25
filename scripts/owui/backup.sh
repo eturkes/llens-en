@@ -1,6 +1,6 @@
 #!/bin/bash
-# Open WebUI のユーザー退避スクリプト。
-# user / auth テーブルだけを INSERT 文として吐く。チャット履歴・設定は含まない。
+# Open WebUI user backup/export script.
+# Dumps only the user / auth tables as INSERT statements. Does not include chat history or settings.
 set -euo pipefail
 
 CONTAINER="${OWUI_CONTAINER:-llens-open-webui}"

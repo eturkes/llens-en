@@ -1,90 +1,90 @@
-# 評価進捗・作業計画
+# Evaluation Progress and Work Plan
 
-各 Phase の進捗・作業計画。**結果数値(精度・速度・公開LB比較)は [`evals/README.md`](../evals/README.md)**、仕様は [`evals/SPEC.md`](../evals/SPEC.md)。
+Progress and work plan for each Phase. **Result numbers (accuracy, speed, public LB comparison) are in [`evals/README.md`](../evals/README.md)**; specifications are in [`evals/SPEC.md`](../evals/SPEC.md).
 
-## ステータス概要
+## Status Overview
 
-| Phase | モデル | thinking | 状況 | 完了日 |
+| Phase | Model | thinking | Status | Completion Date |
 |---|---|---|---|---|
-| 1 | GLM-5.1 | ON | **完了** | 2026-04-29 |
-| 4 | Kimi K2.6 | ON | 進行中 | 2026-04-30 〜 |
-| 2 | DeepSeek V3.2 | ON | 未着手 | - |
-| 3 | GLM-5.1 | OFF | 未着手 | - |
+| 1 | GLM-5.1 | ON | **Completed** | 2026-04-29 |
+| 4 | Kimi K2.6 | ON | In progress | 2026-04-30 -- |
+| 2 | DeepSeek V3.2 | ON | Not started | - |
+| 3 | GLM-5.1 | OFF | Not started | - |
 
-Phase 4 を先行(精度は spec decoding 非依存のため、EAGLE3 ドラフト公開待たず着手)。`lightseekorg/kimi-k2.6-eagle3` が 2026-05 に公開され、現在は `scripts/llm/sglang-kimi-k2.6.sh` で有効化済み。Phase 4 計測値は ドラフト未公開時点の速度なので、速度のみ再ラン予定。
+Phase 4 was started first (accuracy is independent of spec decoding, so work began without waiting for the EAGLE3 draft to be published). `lightseekorg/kimi-k2.6-eagle3` was published in 2026-05 and is now enabled in `scripts/llm/sglang-kimi-k2.6.sh`. Phase 4 speed measurements are from before the draft was published, so only speed will be re-run.
 
-各 Phase 共通条件:
-- temperature=0、max_tokens=32768、N=1
-- vision auto-probe あり(text-only モデルは画像問題自動スキップ → No-Img のみ)
-- SMDIS / JCSTS は除外(理由は `evals/SPEC.md` 末尾)
-- 起動 config は git 管理(`scripts/llm/sglang-*.sh`)
+Common conditions across all Phases:
+- temperature=0, max_tokens=32768, N=1
+- Vision auto-probe enabled (text-only models auto-skip image questions -> No-Img only)
+- SMDIS / JCSTS excluded (see end of `evals/SPEC.md` for rationale)
+- Launch configs are git-managed (`scripts/llm/sglang-*.sh`)
 
-## Phase 1: GLM-5.1 thinking ON (完了)
+## Phase 1: GLM-5.1 thinking ON (Completed)
 
-- 起動: `make run-glm` (`scripts/llm/sglang-glm5.1.sh`、EAGLE spec decoding 有効、TP8、context 131072、FP8)
-- 実行: 2026-04-28 15:27 〜 2026-04-29 14:16(~23時間、9タスク完走)
-- vision_used: false(text-only モデル → 画像問題は auto-skip)
+- Launch: `make run-glm` (`scripts/llm/sglang-glm5.1.sh`, EAGLE spec decoding enabled, TP8, context 131072, FP8)
+- Execution: 2026-04-28 15:27 -- 2026-04-29 14:16 (~23 hours, 9 tasks completed)
+- vision_used: false (text-only model -> image questions auto-skipped)
 
-**観察**: IgakuQA119 No-Img Acc 281/297 (94.61%) が Claude-Sonnet-4 と同点。JMED-LLM MCQ 3タスクは GPT-4o を上回る κ。詳細は `evals/README.md`。
+**Observations**: IgakuQA119 No-Img Acc 281/297 (94.61%) tied with Claude-Sonnet-4. JMED-LLM MCQ 3 tasks exceeded GPT-4o in kappa. Details in `evals/README.md`.
 
-## Phase 4: Kimi K2.6 thinking ON (進行中、2026-04-30 〜)
+## Phase 4: Kimi K2.6 thinking ON (In progress, 2026-04-30 --)
 
-- 起動: `make run-kimi` (`scripts/llm/sglang-kimi-k2.6.sh`、TP8、context 131072、INT4 QAT)
-- **計測時点では EAGLE3 ドラフト未公開のため spec decoding 無し**。現在は `lightseekorg/kimi-k2.6-eagle3` を有効化済み(下記速度の再ランが必要)
-- vision auto-probe **OK**(MoonViT 内蔵 → IgakuQA119 Overall 列が埋まった)
-- 完了: jcommonsenseqa, jemhopqa, jsquad, mgsm, **igakuqa119**(計5タスク)
-- 残: igakuqa, jmmlu_med, crade, rrtnm
+- Launch: `make run-kimi` (`scripts/llm/sglang-kimi-k2.6.sh`, TP8, context 131072, INT4 QAT)
+- **EAGLE3 draft was not yet published at the time of measurement, so spec decoding was disabled**. Now `lightseekorg/kimi-k2.6-eagle3` is enabled (speed re-run needed below)
+- Vision auto-probe **OK** (MoonViT built-in -> IgakuQA119 Overall column is populated)
+- Completed: jcommonsenseqa, jemhopqa, jsquad, mgsm, **igakuqa119** (5 tasks total)
+- Remaining: igakuqa, jmmlu_med, crade, rrtnm
 
-**観察**(完了タスクのみ):
+**Observations** (completed tasks only):
 - MGSM-ja: Kimi 0.904 vs GLM 0.432
-- jcommonsenseqa: Kimi 0.979 vs GLM 0.977(誤差)
-- jsquad exact_match: Kimi 0.806 vs GLM 0.812(誤差)
+- jcommonsenseqa: Kimi 0.979 vs GLM 0.977 (within margin of error)
+- jsquad exact_match: Kimi 0.806 vs GLM 0.812 (within margin of error)
 - jemhopqa exact_match: Kimi 0.617 vs GLM 0.658
-- IgakuQA119 Overall: 455/500 (91.00%)、No-Img: 346/383 (90.34%)
-- IgakuQA119 No-Img Acc は Kimi 91.58% < GLM 94.61%
-- 速度: TTAT p50 が GLM-5.1 の約2倍、decode tok/s 中央値 ~78 (GLM ~95)。**計測時点では** EAGLE3 ドラフト未公開のため spec decoding 無し(現在は有効化済み、再ラン待ち)
+- IgakuQA119 Overall: 455/500 (91.00%), No-Img: 346/383 (90.34%)
+- IgakuQA119 No-Img Acc: Kimi 91.58% < GLM 94.61%
+- Speed: TTAT p50 was ~2x that of GLM-5.1, decode tok/s median ~78 (GLM ~95). **At the time of measurement**, EAGLE3 draft was not yet published so spec decoding was disabled (now enabled, awaiting re-run)
 
-## Phase 2: DeepSeek V3.2 thinking ON (未着手)
+## Phase 2: DeepSeek V3.2 thinking ON (Not started)
 
-- 起動予定: `make run-ds3` (`scripts/llm/sglang-deepseek-v3.2.sh`)
-- spec decoding (MTP) 適用可否を要確認
+- Planned launch: `make run-ds3` (`scripts/llm/sglang-deepseek-v3.2.sh`)
+- Need to verify whether spec decoding (MTP) can be applied
 
-## Phase 3: GLM-5.1 thinking OFF (未着手)
+## Phase 3: GLM-5.1 thinking OFF (Not started)
 
-- Phase 1 と同重み、`--no-think` (`enable_thinking: false`) で Phase 1 との差分計測
-- 主目的: thinking が精度・速度にどれだけ寄与しているかの定量化
+- Same weights as Phase 1, measure delta from Phase 1 with `--no-think` (`enable_thinking: false`)
+- Primary goal: Quantify how much thinking contributes to accuracy and speed
 
-## ハーネス変種: igakuqa119_official
+## Harness Variant: igakuqa119_official
 
-`tasks/igakuqa119/run.py --official` で **naoto-iwase/IgakuQA119 公式 `src/llm_solver.py` と同じ system prompt + `answer:` 行形式** に切替可能。出力は `igakuqa119_official.json`(既存 `igakuqa119.json` と並列保存)。
+`tasks/igakuqa119/run.py --official` switches to **the same system prompt + `answer:` line format as naoto-iwase/IgakuQA119's official `src/llm_solver.py`**. Output is saved to `igakuqa119_official.json` (stored alongside the existing `igakuqa119.json`).
 
-差分:
-- system prompt 付与(persona「優秀で論理的な医療アシスタント」+ 「2つ選べ」等の詳細ルール)
-- 画像問題に「has_image=True は参考情報」の明示
-- 出力形式 `answer: X` 行 + confidence + explanation
-- 抽出は `answer:` 行を最優先、フォールバックで `<answer>` タグ
+Differences:
+- System prompt added (persona "an excellent and logical medical assistant" + detailed rules for "choose two", etc.)
+- Explicit note that "has_image=True is reference information" for image questions
+- Output format: `answer: X` line + confidence + explanation
+- Extraction prioritizes the `answer:` line, with fallback to `<answer>` tag
 
-`run_phase.sh` は `--official` フラグを igakuqa119 だけに転送(`--no-vision` と同じルーティング)。`summarize.py` の TASK_ORDER に追加済みで、leaderboard rows セクションに `igakuqa119` と `igakuqa119_official` が並列表示される。
+`run_phase.sh` forwards the `--official` flag only to igakuqa119 (same routing as `--no-vision`). Added to `summarize.py`'s TASK_ORDER so that `igakuqa119` and `igakuqa119_official` appear side by side in the leaderboard rows section.
 
-公式LBと apples-to-apples 比較する時に使用。デフォルト(--official なし)は変更せず、Phase 1/4 の既存 `igakuqa119.json` は引き続き有効。
+Used for apples-to-apples comparison with the official LB. The default (without --official) is unchanged, and Phase 1/4's existing `igakuqa119.json` remains valid.
 
-## 残タスク・次のアクション(優先順位順)
+## Remaining Tasks and Next Actions (in priority order)
 
-1. **Phase 4 完走待ち**(残り4タスク: igakuqa, jmmlu_med, crade, rrtnm)
-2. **Phase 2 着手**(DeepSeek V3.2)
-3. **Phase 3 着手**(GLM-5.1 thinking OFF)
-4. **クラウドAPI 自前評価**: Claude Opus/Sonnet 4系 / GPT-5系 / Gemini 2.5+ を OpenRouter 経由 (`--base-url https://openrouter.ai/api/v1`) で本ハーネスから評価。数千円〜程度
-5. **国産モデルローカル実走**: `llm-jp-3-8x13b-instruct3` / `SIP-jmed-llm-3-8x13b` を TP=1 で実行、apples-to-apples で日本語FT勢の参考値を取得
-6. **Kimi K2.6 速度再ラン**: EAGLE3 ドラフト (`lightseekorg/kimi-k2.6-eagle3`) を有効化済み(2026-05-17)、`make run-kimi` 再起動後に速度のみ再計測
-7. **JCSTS / SMDIS 補完**(時間に余裕がある時): 3モデル一括で改めて取得
-8. **JMED-LLM NER系**(CRNER/RRNER/NRNER): 採点ロジック実装が必要
-9. **並列スループット**: 同時 4/8/16 ユーザー時の TTFT/throughput 劣化(`sglang.bench_serving` で別測)
+1. **Wait for Phase 4 to complete** (4 remaining tasks: igakuqa, jmmlu_med, crade, rrtnm)
+2. **Start Phase 2** (DeepSeek V3.2)
+3. **Start Phase 3** (GLM-5.1 thinking OFF)
+4. **Cloud API self-evaluation**: Evaluate Claude Opus/Sonnet 4 series / GPT-5 series / Gemini 2.5+ via OpenRouter (`--base-url https://openrouter.ai/api/v1`) using this harness. Cost estimate: a few thousand yen (~tens of USD)
+5. **Run domestic models locally**: Run `llm-jp-3-8x13b-instruct3` / `SIP-jmed-llm-3-8x13b` at TP=1 for apples-to-apples reference values from Japanese-fine-tuned models
+6. **Kimi K2.6 speed re-run**: EAGLE3 draft (`lightseekorg/kimi-k2.6-eagle3`) enabled (2026-05-17), re-measure speed only after restarting with `make run-kimi`
+7. **JCSTS / SMDIS supplemental run** (when time permits): Re-collect all 3 models in a single batch
+8. **JMED-LLM NER tasks** (CRNER/RRNER/NRNER): Scoring logic implementation required
+9. **Concurrent throughput**: TTFT/throughput degradation under 4/8/16 simultaneous users (measured separately with `sglang.bench_serving`)
 
-## 後続(本ドキュメント範囲外)
+## Follow-up (outside the scope of this document)
 
-- 院内ガイドラインMCQ(医師監修50〜100問、機械採点)
-- 自院カルテ要約(医師による自由記述評価)
-- 長文性能(Needle-in-a-Haystack JP、64K〜128K)
-- 安全性(PII漏洩・過剰拒否・プロンプトインジェクション)
+- In-hospital guideline MCQ (50-100 physician-supervised questions, machine-scored)
+- Own-hospital clinical note summarization (physician free-text evaluation)
+- Long-context performance (Needle-in-a-Haystack JP, 64K-128K)
+- Safety (PII leakage, over-refusal, prompt injection)
 
-これらは閉域化前後で別途検討。
+These will be considered separately before and after network isolation.

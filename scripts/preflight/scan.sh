@@ -1,26 +1,26 @@
 #!/bin/bash
 #==============================================================================
 # preflight-scan.sh
-#   ClamAV による全体スキャン (院外シャットダウン直前用)
+#   Full ClamAV scan (run just before shutdown for deployment)
 #
-# 使い方:
+# Usage:
 #   make preflight-scan
-#   または: sudo bash scripts/preflight-scan.sh
+#   or: sudo bash scripts/preflight-scan.sh
 #
-# 出力:
-#   <repo>/logs/preflight-scan_<TS>.log     スクリプト実行ログ
-#   <repo>/logs/clamscan/clamscan_<TS>.log  スキャン結果本体
+# Output:
+#   <repo>/logs/preflight-scan_<TS>.log     Script execution log
+#   <repo>/logs/clamscan/clamscan_<TS>.log  Scan results
 #
-# 終了コード:
-#   0  感染なし
-#   2  感染検知あり (搬入中止)
-#   それ以外  ClamAV 自体のエラー
+# Exit codes:
+#   0  No infections found
+#   2  Infections detected (abort deployment)
+#   other  ClamAV internal error
 #==============================================================================
 
 set -uo pipefail
 
 if [ "$EUID" -ne 0 ]; then
-    echo "ERROR: root権限で実行してください (make preflight-scan を推奨)"
+    echo "ERROR: Must be run as root (make preflight-scan recommended)"
     exit 1
 fi
 
@@ -56,29 +56,29 @@ echo " host=$(hostname)   invoker=${SUDO_USER:-root}"
 echo "=============================================================="
 
 if ! command -v clamscan >/dev/null 2>&1; then
-    echo "ERROR: clamscan が未インストールです (apt install clamav)"
+    echo "ERROR: clamscan not installed (apt install clamav)"
     exit 1
 fi
 
 #------------------------------------------------------------------------------
-section "ClamAV パターン最新化 (freshclam)"
-# clamav-freshclam サービスが動いていればロック競合するため一旦停止
+section "ClamAV pattern update (freshclam)"
+# Stop clamav-freshclam service first to avoid lock contention
 systemctl stop clamav-freshclam 2>/dev/null || true
-freshclam || { echo "ERROR: freshclam 失敗 — 院外ネットワーク接続を確認"; exit 1; }
+freshclam || { echo "ERROR: freshclam failed — check external network connectivity"; exit 1; }
 
-section "パターンファイル情報"
+section "Pattern file info"
 for f in /var/lib/clamav/main.cvd /var/lib/clamav/daily.cvd /var/lib/clamav/bytecode.cvd \
          /var/lib/clamav/main.cld /var/lib/clamav/daily.cld /var/lib/clamav/bytecode.cld; do
     [ -f "$f" ] && sigtool --info "$f" 2>/dev/null | grep -E "Build time|Version" | sed "s|^|$f: |"
 done
 
 #------------------------------------------------------------------------------
-section "フルスキャン実行 (除外: モデル / Docker / 自身のログ)"
-echo "  結果ログ: $SCANLOG"
+section "Full scan (excluding: models / Docker / own logs)"
+echo "  Results log: $SCANLOG"
 echo ""
 
-# モデルディレクトリ(数百GB)、Docker レイヤ、本スクリプトのログは除外
-# --max-filesize / --max-scansize で巨大ファイル(モデルshard 漏れ等)を早期スキップ
+# Exclude model directories (hundreds of GB), Docker layers, and this script's logs
+# --max-filesize / --max-scansize to early-skip huge files (leaked model shards, etc.)
 clamscan -r --infected \
     --exclude-dir='^/sys' \
     --exclude-dir='^/proc' \
@@ -93,29 +93,29 @@ clamscan -r --infected \
     --log="$SCANLOG" \
     / || true
 
-# スキャンログもユーザー所有に戻す (clamscan が root で書き直すため)
+# Restore scan log ownership (clamscan rewrites as root)
 if [ -n "${SUDO_USER:-}" ]; then
     chown "$SUDO_USER:$SUDO_GID" "$SCANLOG" 2>/dev/null || true
     chmod 600 "$SCANLOG"
 fi
 
 #------------------------------------------------------------------------------
-section "スキャン結果サマリ"
+section "Scan results summary"
 tail -20 "$SCANLOG"
 
 INFECTED=$(grep -E "^Infected files:" "$SCANLOG" | awk '{print $3}')
 echo ""
 echo "=============================================================="
 if [ "$INFECTED" = "0" ]; then
-    echo " [OK] 感染ファイルなし (Infected files: 0)"
-    echo " 実行ログ: $LOGFILE"
-    echo " 詳細ログ: $SCANLOG"
+    echo " [OK] No infected files (Infected files: 0)"
+    echo " Execution log: $LOGFILE"
+    echo " Detail log: $SCANLOG"
     echo "=============================================================="
     exit 0
 else
-    echo " [NG] 感染検知あり (Infected files: $INFECTED) — 搬入中止"
-    echo " 実行ログ: $LOGFILE"
-    echo " 詳細ログ: $SCANLOG"
+    echo " [NG] Infections detected (Infected files: $INFECTED) — abort deployment"
+    echo " Execution log: $LOGFILE"
+    echo " Detail log: $SCANLOG"
     echo "=============================================================="
     exit 2
 fi

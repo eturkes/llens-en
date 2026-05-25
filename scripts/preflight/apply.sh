@@ -1,29 +1,29 @@
 #!/bin/bash
 #==============================================================================
 # preflight-apply.sh
-#   搬入前作業の構成適用スクリプト
-#   全操作はべき等。何度叩いても同じ結果になる
+#   Configuration apply script for pre-deployment tasks
+#   All operations are idempotent. Running multiple times yields the same result
 #
-# 使い方:
+# Usage:
 #   make preflight-apply
-#   または: sudo bash scripts/preflight-apply.sh
+#   or: sudo bash scripts/preflight-apply.sh
 #
-# 出力:
+# Output:
 #   <repo>/logs/preflight-apply_<TS>.log
 #
-# 含まれるもの:
-#   A. アプリ構成 (恒久設定)
-#     A2  kernel / nvidia パッケージの apt-mark hold
-#     A3  nvidia-persistenced の有効化
-#     A4  UFW 設定 (default deny incoming + 必要 allow)
-#     A5  SSH ハードニング (/etc/ssh/sshd_config.d/99-llens.conf)
-#     ※ A1 (時刻同期) は院内NTP情報が必要なため audit で確認のみ、手動対応
-#   B. 不要設定の omit (通信抑止 / 攻撃面削減)
-#     B1  OS 自動更新の停止 (apt 系)
-#     B2  Snap 自動更新の保留
-#     B3  テレメトリ・クラッシュレポート系の削除
-#     B4  motd-news の無効化
-#     B5  不要・自動更新サービスの停止 (まとめ)
+# Contents:
+#   A. Application configuration (permanent settings)
+#     A2  kernel / nvidia package apt-mark hold
+#     A3  nvidia-persistenced enable
+#     A4  UFW configuration (default deny incoming + required allow rules)
+#     A5  SSH hardening (/etc/ssh/sshd_config.d/99-llens.conf)
+#     * A1 (time sync) requires internal NTP info, audit only — manual setup
+#   B. Disable unnecessary settings (suppress outbound traffic / reduce attack surface)
+#     B1  Stop OS auto-updates (apt related)
+#     B2  Hold Snap auto-updates
+#     B3  Remove telemetry / crash reporting packages
+#     B4  Disable motd-news
+#     B5  Stop unnecessary / auto-update services (bulk)
 #         clamav-freshclam / ua-timer / esm-cache / apt-news /
 #         rpcbind / slurmctld / slurmd / cups / cups-browsed /
 #         postfix / nfs-server / nfs-kernel-server / rpc-statd
@@ -32,7 +32,7 @@
 set -uo pipefail
 
 if [ "$EUID" -ne 0 ]; then
-    echo "ERROR: root権限で実行してください (make preflight-apply を推奨)"
+    echo "ERROR: Must be run as root (make preflight-apply recommended)"
     exit 1
 fi
 
@@ -62,13 +62,13 @@ section() {
 echo "=============================================================="
 echo " preflight-apply.sh   $(date '+%Y-%m-%d %H:%M:%S')"
 echo " host=$(hostname)   invoker=${SUDO_USER:-root}"
-echo " ※ 全操作はべき等 — 再実行しても安全"
+echo " * All operations are idempotent — safe to re-run"
 echo "=============================================================="
 
 #==============================================================================
-# A. アプリ構成
+# A. Application configuration
 #==============================================================================
-section "[A2] kernel / nvidia パッケージの apt-mark hold"
+section "[A2] kernel / nvidia package apt-mark hold"
 
 KERNEL_PKGS="linux-image-generic linux-headers-generic"
 RUNNING_KERNEL="linux-image-$(uname -r) linux-headers-$(uname -r)"
@@ -76,29 +76,29 @@ NVIDIA_PKGS=$(dpkg -l 'nvidia-driver-*' 'nvidia-utils-*' 'libnvidia-*' 2>/dev/nu
               | awk '/^ii/ {print $2}' | tr '\n' ' ')
 
 TARGETS="$KERNEL_PKGS $RUNNING_KERNEL $NVIDIA_PKGS"
-echo "対象: $TARGETS"
-# apt-mark hold は対象が既に hold でも exit 0、未インストールパッケージは無視されるためべき等
+echo "Targets: $TARGETS"
+# apt-mark hold exits 0 even if already held; uninstalled packages are ignored — idempotent
 # shellcheck disable=SC2086
 apt-mark hold $TARGETS || true
 
-echo "現在の hold 一覧:"
+echo "Current hold list:"
 apt-mark showhold || true
 
 #------------------------------------------------------------------------------
-section "[A3] nvidia-persistenced 有効化"
+section "[A3] nvidia-persistenced enable"
 if systemctl list-unit-files nvidia-persistenced.service 2>/dev/null | grep -q nvidia-persistenced; then
     systemctl enable --now nvidia-persistenced
     echo "  enabled / active: $(systemctl is-active nvidia-persistenced)"
 else
-    echo "[SKIP] nvidia-persistenced 未インストール (NVIDIAドライバ標準同梱、要確認)"
+    echo "[SKIP] nvidia-persistenced not installed (bundled with NVIDIA driver, needs verification)"
 fi
 
 #------------------------------------------------------------------------------
-section "[A4] UFW 設定"
-# 同一ルールは ufw 内部で重複追加されないためべき等。
-# default policies と --force enable も idempotent (既設定なら no-op)。
+section "[A4] UFW configuration"
+# Duplicate rules are not added by ufw internally — idempotent.
+# default policies and --force enable are also idempotent (no-op if already set).
 if ! command -v ufw >/dev/null 2>&1; then
-    echo "[SKIP] ufw 未インストール (apt install ufw)"
+    echo "[SKIP] ufw not installed (apt install ufw)"
 else
     ufw default deny incoming  >/dev/null
     ufw default allow outgoing >/dev/null
@@ -109,83 +109,83 @@ else
     ufw allow from 172.16.0.0/12 to any port 3000   comment 'Docker -> cage'   >/dev/null
     ufw allow from 100.64.0.0/10 to any port 8000   comment 'Tailnet -> SGLang' >/dev/null
     ufw --force enable >/dev/null
-    echo "現在の UFW ルール:"
+    echo "Current UFW rules:"
     ufw status numbered
 fi
 
 #------------------------------------------------------------------------------
-section "[A5] SSH ハードニング"
-# sshd_config 本体は触らず、Include される drop-in に書き出し。
-# 同内容を毎回上書きするためべき等。
+section "[A5] SSH hardening"
+# Do not touch the main sshd_config; write to an Include'd drop-in file.
+# Overwrites with the same content each time — idempotent.
 SSHD_CONF=/etc/ssh/sshd_config.d/99-llens.conf
 cat > "$SSHD_CONF" <<'EOF'
-# Managed by preflight-apply.sh — 手動編集は次回 apply で上書きされる
+# Managed by preflight-apply.sh — manual edits will be overwritten on next apply
 PasswordAuthentication no
 PermitRootLogin no
 PubkeyAuthentication yes
 EOF
 chmod 644 "$SSHD_CONF"
-echo "  書き出し: $SSHD_CONF"
+echo "  Written: $SSHD_CONF"
 
 if ! grep -qE '^[[:space:]]*Include[[:space:]]+/etc/ssh/sshd_config\.d' /etc/ssh/sshd_config 2>/dev/null; then
-    echo "  [WARN] /etc/ssh/sshd_config が sshd_config.d を Include していない可能性 — 99-llens.conf が読まれない場合あり"
+    echo "  [WARN] /etc/ssh/sshd_config may not Include sshd_config.d — 99-llens.conf might not be loaded"
 fi
 
 if sshd -t 2>&1; then
     systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true
     echo "  sshd reloaded"
 else
-    echo "  [ERROR] sshd -t 失敗 — 設定不正、reload しません"
+    echo "  [ERROR] sshd -t failed — configuration invalid, not reloading"
 fi
 
 #==============================================================================
-# B. 不要設定の omit
+# B. Disable unnecessary settings
 #==============================================================================
-section "[B1] OS 自動更新の停止"
+section "[B1] Stop OS auto-updates"
 systemctl disable --now unattended-upgrades 2>/dev/null || true
 systemctl disable --now apt-daily.timer apt-daily-upgrade.timer 2>/dev/null || true
-# is-enabled は disabled で非0 終了するが stdout には "disabled" を出す。
-# $(... || echo X) すると stdout が "disabled\nX" になり行が崩れるので
-# stdout を一旦捕まえて空のときだけ placeholder にする。
+# is-enabled exits non-zero for disabled but prints "disabled" to stdout.
+# $(... || echo X) would produce "disabled\nX" and break formatting, so
+# capture stdout and use a placeholder only when empty.
 for unit in unattended-upgrades apt-daily.timer apt-daily-upgrade.timer; do
     state=$(systemctl is-enabled "$unit" 2>/dev/null); [ -z "$state" ] && state=n/a
     printf "  %-25s %s\n" "$unit:" "$state"
 done
 
 #------------------------------------------------------------------------------
-section "[B2] Snap 自動更新の保留"
+section "[B2] Hold Snap auto-updates"
 if command -v snap >/dev/null 2>&1; then
     snap refresh --hold || true
     snap refresh --time 2>/dev/null | grep -iE "hold|next" || true
 else
-    echo "[SKIP] snap 未インストール"
+    echo "[SKIP] snap not installed"
 fi
 
 #------------------------------------------------------------------------------
-section "[B3] テレメトリ・クラッシュレポート系の削除"
+section "[B3] Remove telemetry / crash reporting packages"
 apt-get remove -y --purge popularity-contest apport whoopsie 2>/dev/null || true
 systemctl disable --now apport.service 2>/dev/null || true
 for pkg in popularity-contest apport whoopsie; do
     if dpkg -l "$pkg" 2>/dev/null | grep -q "^ii"; then
-        echo "  $pkg: still installed (要確認)"
+        echo "  $pkg: still installed (needs investigation)"
     else
         echo "  $pkg: removed"
     fi
 done
 
 #------------------------------------------------------------------------------
-section "[B4] motd-news の無効化"
+section "[B4] Disable motd-news"
 if [ -f /etc/default/motd-news ]; then
     sed -i 's/^ENABLED=1/ENABLED=0/' /etc/default/motd-news
     grep -E "^ENABLED=" /etc/default/motd-news
 else
-    echo "[SKIP] /etc/default/motd-news なし"
+    echo "[SKIP] /etc/default/motd-news not found"
 fi
 
 #------------------------------------------------------------------------------
-section "[B5] 不要・自動更新サービスの停止"
-# 存在すれば disable --now、無ければ静かにスキップ。
-# disable / is-enabled は idempotent。
+section "[B5] Stop unnecessary / auto-update services"
+# Disable if present, silently skip if absent.
+# disable / is-enabled are idempotent.
 while read -r unit description; do
     [ -z "$unit" ] && continue
     if systemctl list-unit-files "$unit" 2>/dev/null | grep -q "$unit"; then
@@ -196,29 +196,29 @@ while read -r unit description; do
         printf "  %-32s %-12s  %s\n" "$unit" "not-found" "$description"
     fi
 done <<'EOF'
-clamav-freshclam.service        ClamAV 自動パターン更新 (手動運用に切替)
-ua-timer.timer                  Ubuntu Pro / ESM 定期チェック
-esm-cache.service               Ubuntu Pro / ESM キャッシュ
-apt-news.service                APT ニュース
-rpcbind.service                 RPC ポートマッパー
-rpcbind.socket                  RPC ポートマッパー
+clamav-freshclam.service        ClamAV auto pattern update (switched to manual operation)
+ua-timer.timer                  Ubuntu Pro / ESM periodic check
+esm-cache.service               Ubuntu Pro / ESM cache
+apt-news.service                APT news
+rpcbind.service                 RPC portmapper
+rpcbind.socket                  RPC portmapper
 slurmctld.service               Slurm (HGX vendor pre-install)
 slurmd.service                  Slurm (HGX vendor pre-install)
-cups.service                    CUPS プリンタサーバ
-cups-browsed.service            CUPS ブラウザ
+cups.service                    CUPS print server
+cups-browsed.service            CUPS browser
 postfix.service                 Postfix MTA
-nfs-server.service              NFS サーバ
-nfs-kernel-server.service       NFS サーバ (旧名)
+nfs-server.service              NFS server
+nfs-kernel-server.service       NFS server (legacy name)
 rpc-statd.service               NFS lock daemon
 EOF
 
 echo ""
 echo "=============================================================="
-echo " 完了 (べき等処理のため再実行しても結果は変わりません)"
-echo " ログ: $LOGFILE"
+echo " Done (idempotent — re-running produces the same result)"
+echo " Log: $LOGFILE"
 echo ""
-echo " 次のステップ:"
-echo "   1. make preflight-audit   # 適用後の状態を確認"
-echo "   2. 時刻同期 (A1) を院内NTP設定 — 手動対応"
-echo "   3. シャットダウン直前: make preflight-scan"
+echo " Next steps:"
+echo "   1. make preflight-audit   # Verify post-apply state"
+echo "   2. Configure time sync (A1) with internal NTP — manual setup"
+echo "   3. Before shutdown: make preflight-scan"
 echo "=============================================================="

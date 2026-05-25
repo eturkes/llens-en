@@ -1,43 +1,43 @@
 # LLENS - Large Language Enhanced Nexus System
 
-北大病院内 HGX H200x8 LLM 推論基盤。
+HGX H200x8 LLM inference platform inside Hokkaido University Hospital.
 
-## 環境
+## Environment
 
-- デプロイまではオンライン。デプロイ後は病院内閉域に閉ざされる
-- 取り出すには SSD 初期化が必要。データの持ち出し不可
-- 閉域後の更新は基本的に行わない
+- Online until deployment. After deployment, confined to the hospital's air-gapped network
+- Extracting data requires SSD initialization. No data may be taken out
+- No updates are planned after the network is air-gapped
 
-## サーバー
+## Server
 
-- HGX H200 x8 (141GB HBM3e/基、計 1,128GB)
+- HGX H200 x8 (141GB HBM3e per GPU, 1,128GB total)
 - Ubuntu 24.04 LTS
-- NVIDIA ドライバ + Docker インストール済み
+- NVIDIA driver + Docker pre-installed
 
-## スタック
+## Stack
 
-- **SGLang**: uv 直接実行。コンテナ化しない。`:8000`
-- **Open WebUI**: Docker で動作。`:8080`。ユーザー管理もここで行う
-- **モデル**: `models/` 配下 (gitignored)。構成は変わりうる
+- **SGLang**: Run directly via uv. Not containerized. `:8000`
+- **Open WebUI**: Runs in Docker. `:8080`. User management is also handled here
+- **Models**: Under `models/` (gitignored). Configuration may change
 
-## 運用ユーザー
+## Operations User
 
-- 現在は `enda` ユーザー (管理者) でそのまま実行
-- サーバーに SSH するのは基本 enda のみ。`user` はテスト用
-- 将来的には専用サービスユーザー `llens` + `/opt/llens` 構成に移行予定 (docs/migration.md 参照)
+- Currently running as the `enda` user (admin) as-is
+- Only enda SSHes into the server as a rule. `user` is for testing
+- Future plan to migrate to a dedicated service user `llens` + `/opt/llens` layout (see docs/migration.md)
 
-## リポジトリ構成
+## Repository Structure
 
-- `scripts/llm/sglang-*.sh` — モデルごとの SGLang 起動スクリプト
-- `scripts/owui/{backup,restore,wal-flush}.sh` — Open WebUI 運用
-- `scripts/preflight/{audit,apply,scan}.sh` — 院内搬入前の構成適用 / ClamAV
+- `scripts/llm/sglang-*.sh` — Per-model SGLang launch scripts
+- `scripts/owui/{backup,restore,wal-flush}.sh` — Open WebUI operations
+- `scripts/preflight/{audit,apply,scan}.sh` — Pre-hospital-delivery configuration / ClamAV
 - `Makefile` — `make run-{kimi,glm,ds3,ds4,qwen}` / `make preflight-{audit,apply,scan}`
 - `docker-compose.yml` — Open WebUI
-- `docs/migration.md` — 本番移行メモ (systemd、専用ユーザー等)
-- モデル情報 (スペック、VRAM、起動コマンド) は README のモデルセクションに記載
+- `docs/migration.md` — Production migration notes (systemd, dedicated user, etc.)
+- Model information (specs, VRAM, launch commands) is documented in the README model section
 
-## 方針
+## Policy
 
-- モデル構成は試行錯誤する。システム基盤 (SGLang + Open WebUI + H200x8) は不変
-- デフォルト値をそのまま使う。独自設定を入れない
-- 過度な設計をしない。段階的に進める
+- Model configuration is experimental. The system foundation (SGLang + Open WebUI + H200x8) is fixed
+- Use default values as-is. Do not introduce custom settings
+- Avoid over-engineering. Proceed incrementally

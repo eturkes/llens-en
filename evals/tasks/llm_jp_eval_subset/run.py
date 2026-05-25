@@ -37,15 +37,15 @@ DATASET_ROOT = (
 ANSWER_PATTERNS: dict[str, tuple[str, str]] = {
     "choice_only_jp": (
         r"(?s)^\s*([0-9０-９])",
-        "選択肢の番号のみで回答してください。",
+        "Answer with only the choice number.",
     ),
     "answer_tags_jp": (
         r"<answer>(.*?)</answer>",
-        "<answer></answer>タグで囲んで回答してください。",
+        "Enclose your answer in <answer></answer> tags.",
     ),
     "latex_boxed_jp": (
         r"\\boxed\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}",
-        "最終的な答えを $\\boxed{}$ に入れてください。",
+        "Put your final answer in $\\boxed{}$.",
     ),
 }
 
@@ -137,11 +137,11 @@ def run_task(
     if limit:
         samples = samples[:limit]
 
-    # 明示送信が必須:
-    #   - DeepSeek V3.2: `thinking` key、default OFF → True で ON 化
-    #   - Kimi K2.6: `thinking` key、default ON → True で冗長確認
-    #   - GLM-5.1: `enable_thinking` key、default ON → True で冗長確認
-    # 両キーを送れば全モデルで意図通り動く (関係ないキーは template が無視)
+    # Explicit sending is required:
+    #   - DeepSeek V3.2: `thinking` key, default OFF -> True enables it
+    #   - Kimi K2.6: `thinking` key, default ON -> True is redundant confirmation
+    #   - GLM-5.1: `enable_thinking` key, default ON -> True is redundant confirmation
+    # Sending both keys works correctly for all models (irrelevant keys are ignored by the template)
     extra_body: dict[str, Any] = {
         "chat_template_kwargs": {
             "thinking": not no_think,

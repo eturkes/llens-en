@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# llm-jp-3-8x13b 系(ベンチマーク比較用、シングルユーザー前提)。
+# llm-jp-3-8x13b series (for benchmark comparison, single-user assumption).
 # Usage:   ./scripts/sglang-llm-jp-3-bench.sh {instruct3|sip-jmed}
 # Env:     CUDA_VISIBLE_DEVICES (default "0")  PORT (default 8000)
 #
-# Default は TP=1 (GPU 1基)。94GB/141GB に収まり、NCCL コスト無しでデコード最速。
-# 並列実行する場合のみ GPU 増やす(同時 2 モデルは GPU 0 と GPU 1 に分けるなど):
+# Default is TP=1 (single GPU). Fits within 94GB/141GB, fastest decode without NCCL overhead.
+# Only increase GPUs for parallel execution (e.g. run 2 models simultaneously on GPU 0 and GPU 1):
 #   CUDA_VISIBLE_DEVICES=0 PORT=8000 ./scripts/sglang-llm-jp-3-bench.sh instruct3 &
 #   CUDA_VISIBLE_DEVICES=1 PORT=8001 ./scripts/sglang-llm-jp-3-bench.sh sip-jmed  &
 #   wait

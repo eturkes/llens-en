@@ -3,7 +3,7 @@
 title: Password Generator
 author: Ken Enda
 version: 0.2
-description: アカウント発行用のパスワードを生成します
+description: Generates passwords for account provisioning
 """
 
 import secrets
@@ -20,15 +20,16 @@ class Tools:
         use_symbols: bool = False,
     ) -> str:
         """
-        アカウント発行用のパスワードを生成します。
-        英大文字・英小文字・数字を必ず各1文字以上含み、誤読しやすい文字(0 O o 1 l I |)は除外されます。
+        Generates passwords for account provisioning.
+        Each password contains at least one uppercase letter, one lowercase letter, and one digit.
+        Easily confused characters (0 O o 1 l I |) are excluded.
 
-        :param length: パスワードの文字数。デフォルト8、最小6、最大32。指定がなければ10を使うこと。
-        :param count: 生成する個数。デフォルト1、最大5。指定がなければ1を使うこと。
-        :param use_symbols: 記号(!@#$%&*+-=?)を含めるか。デフォルトfalse。記号を含める場合は12文字以上推奨。
-        :return: 生成されたパスワード文字列
+        :param length: Password length. Default 8, minimum 6, maximum 32. Use 10 if unspecified.
+        :param count: Number of passwords to generate. Default 1, maximum 5. Use 1 if unspecified.
+        :param use_symbols: Whether to include symbols (!@#$%&*+-=?). Default false. If including symbols, 12+ characters recommended.
+        :return: Generated password string(s)
         """
-        # バリデーション
+        # Validation
         try:
             length = int(length) if length else 10
             count = int(count) if count else 1
@@ -61,7 +62,7 @@ class Tools:
             passwords.append("".join(pwd_chars))
 
         if count == 1:
-            return f"生成されたパスワード: {passwords[0]}"
+            return f"Generated password: {passwords[0]}"
         else:
             lines = [f"{i+1}. {p}" for i, p in enumerate(passwords)]
-            return "生成されたパスワード:\n" + "\n".join(lines)
+            return "Generated passwords:\n" + "\n".join(lines)

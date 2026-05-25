@@ -1,24 +1,24 @@
-# 本番移行メモ
+# Production Migration Notes
 
-現在は enda ユーザーで直接実行しているが、本番運用に向けて以下を検討。
+Currently running directly under the enda user, but the following should be considered for production operation.
 
-## 専用サービスユーザー
+## Dedicated Service User
 
 ```bash
 useradd --system --shell /usr/sbin/nologin --home-dir /opt/llens --create-home llens
 usermod -aG video,render llens
 ```
 
-- `video`,`render` グループで GPU アクセスを付与
-- `/dev/nvidia*` のグループは `ls -la /dev/nvidia*` で要確認
-- 動作確認: `sudo -u llens nvidia-smi`
+- Grant GPU access via the `video` and `render` groups
+- Check the group of `/dev/nvidia*` with `ls -la /dev/nvidia*`
+- Verify: `sudo -u llens nvidia-smi`
 
-## デプロイパス
+## Deploy Path
 
-`/opt/llens` に配置し `llens:llens` で所有。
-管理者は sudo 経由で操作: `sudo -u llens uv sync` 等。
+Place under `/opt/llens` and own with `llens:llens`.
+Administrators operate via sudo: `sudo -u llens uv sync`, etc.
 
-## systemd ユニット (SGLang)
+## systemd Unit (SGLang)
 
 ```ini
 [Unit]
@@ -40,37 +40,37 @@ Environment=HOME=/opt/llens
 WantedBy=multi-user.target
 ```
 
-- 起動コマンドは `scripts/llm/sglang-*.sh` を直接呼ぶ (モデル切替時は ExecStart を差し替え)
-- uv はスクリプト内で `uv run` を使うので `llens` ユーザーから見えるパスに配置
-- `nvidia-persistenced.service` 依存で GPU 初期化後に起動
-- `Restart=on-failure` でクラッシュ時自動復帰
+- The launch command calls `scripts/llm/sglang-*.sh` directly (replace ExecStart when switching models)
+- uv uses `uv run` inside the scripts, so place it in a path visible to the `llens` user
+- Depends on `nvidia-persistenced.service` to start after GPU initialization
+- `Restart=on-failure` for automatic recovery on crash
 
 ## Open WebUI (Docker)
 
-Docker の `restart: unless-stopped` ポリシーで自動復帰。
-`systemctl enable docker` で Docker デーモン自体の自動起動を保証。
-別途 systemd ユニットは不要。
+Automatic recovery via Docker's `restart: unless-stopped` policy.
+Ensure Docker daemon auto-start with `systemctl enable docker`.
+No separate systemd unit is needed.
 
-## デプロイフロー
+## Deployment Flow
 
 ```
-1. OS インストール (Ubuntu 24.04 LTS)
-2. SSH ログイン
-3. git clone → /opt/llens に配置
-4. NVIDIA ドライバ, Docker, uv インストール
-5. 再起動 (ドライバ反映)
-6. llens ユーザー作成
-7. モデルダウンロード (オンライン中)
-8. uv sync, systemd 登録, サービス起動
-9. 動作確認
-10. 閉域接続
+1. OS install (Ubuntu 24.04 LTS)
+2. SSH login
+3. git clone -> place under /opt/llens
+4. Install NVIDIA driver, Docker, uv
+5. Reboot (to apply driver)
+6. Create llens user
+7. Download models (while still online)
+8. uv sync, register systemd unit, start services
+9. Verify operation
+10. Connect to isolated network
 ```
 
-## 検証
+## Verification
 
 ```bash
 sudo -u llens nvidia-smi
 curl http://localhost:8000/v1/models
 curl -s http://localhost:3000 | head -1
-sudo reboot  # 再起動後に全サービス自動復帰を確認
+sudo reboot  # Confirm all services auto-recover after reboot
 ```

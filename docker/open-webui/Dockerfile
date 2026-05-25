@@ -1,25 +1,25 @@
-# LLENS 用 Open WebUI イメージ
+# LLENS custom Open WebUI image
 #
-# - バックエンド (Python 3.11): pdf2image / pypdf を pip 追加 (pin)
-#   用途: Functions/Tools から PDF → 画像 → VLM (Kimi K2.6 等) 経路
-# - クライアント Pyodide (Python 3.12 WASM): Office 系 wheel を静的配信
-#   /app/build/static/pyodide-extra/*.whl が同一オリジン HTTP で配信される
-#   → 閉域でもブラウザの micropip でロード可能
+# - Backend (Python 3.11): pdf2image / pypdf added via pip (pinned)
+#   Purpose: PDF → image → VLM (Kimi K2.6, etc.) pipeline for Functions/Tools
+# - Client Pyodide (Python 3.12 WASM): Office-related wheels served statically
+#   /app/build/static/pyodide-extra/*.whl served over same-origin HTTP
+#   → micropip can load them in the browser even in an air-gapped environment
 #
-# バージョン更新時は FROM タグと docker-compose.yml の image タグを同期して
+# When updating versions, sync the FROM tag with the image tag in docker-compose.yml:
 #   docker compose build --pull open-webui
 
 FROM ghcr.io/open-webui/open-webui:v0.9.5
 
 # ─────────────────────────────────────────────
-# システムパッケージ (PDF → 画像変換)
+# System packages (PDF to image conversion)
 # ─────────────────────────────────────────────
 RUN apt-get update \
  && apt-get install -y --no-install-recommends poppler-utils \
  && rm -rf /var/lib/apt/lists/*
 
 # ─────────────────────────────────────────────
-# バックエンド (Python 3.11)
+# Backend (Python 3.11)
 # ─────────────────────────────────────────────
 RUN pip install --no-cache-dir \
         pdf2image==1.17.0 \
@@ -27,23 +27,23 @@ RUN pip install --no-cache-dir \
         tiktoken
 
 # ─────────────────────────────────────────────
-# Pyodide (ブラウザ WASM) 向け wheel を静的配信ディレクトリへ
+# Pyodide (browser WASM) wheels for static serving
 # ─────────────────────────────────────────────
-# /app/build/static/pyodide-extra/ に置いた wheel は同一オリジン HTTP で配信され、
-# pyfetch + micropip.install(deps=False) でブラウザ Pyodide にロードされる。
+# Wheels placed in /app/build/static/pyodide-extra/ are served over same-origin HTTP
+# and loaded into browser Pyodide via pyfetch + micropip.install(deps=False).
 #
-# OWUI 0.9.5 同梱 Pyodide = 0.28.0.dev0 / ABI cp313-pyodide_2025_0_wasm32。
-# `/app/build/pyodide/` に下記の wheel だけが既に bundle されており、
-# `loadPackagesFromImports` で import から auto-load される (再配布不要):
+# OWUI 0.9.5 bundled Pyodide = 0.28.0.dev0 / ABI cp313-pyodide_2025_0_wasm32.
+# `/app/build/pyodide/` already bundles the following wheels, which are
+# auto-loaded from imports via `loadPackagesFromImports` (no redistribution needed):
 #   beautifulsoup4 / matplotlib / numpy / pandas / pillow / pytz / regex /
 #   scikit-learn / scipy / sympy / tiktoken / typing_extensions
-#   (openai / requests / pydantic / httpx 等 OWUI 内部用も含む)
+#   (openai / requests / pydantic / httpx etc. for OWUI internal use also included)
 #
-# 注意: pyodide-lock.json には lxml / jinja2 / markupsafe / pycryptodome 等の
-# entry も載っているが OWUI は wheel ファイルを bundle から落としているため、
-# `await micropip.install("lxml")` 等は 404 で失敗する。下記の経路で別途配信する。
+# Note: pyodide-lock.json lists entries for lxml / jinja2 / markupsafe / pycryptodome
+# etc., but OWUI has dropped the wheel files from the bundle, so
+# `await micropip.install("lxml")` etc. will fail with 404. Serve them separately below.
 #
-# 経路 A: pure-Python wheel (py3-none-any) を PyPI から取得。
+# Route A: pure-Python wheels (py3-none-any) fetched from PyPI.
 RUN mkdir -p /app/build/static/pyodide-extra \
  && pip download \
         --dest /app/build/static/pyodide-extra \
@@ -64,11 +64,11 @@ RUN mkdir -p /app/build/static/pyodide-extra \
         segno==1.6.6 \
         sqlglot==30.8.0
 
-# 経路 B: C 拡張ありで Pyodide 専用 emscripten ビルドが必要なもの (PyPI には無い)。
-# Pyodide upstream (jsdelivr v0.28.0/full) から ABI 2025_0 wheel を直接取得する。
-# OWUI 同梱 Pyodide (0.28.0.dev0) と v0.28.0 はリビジョン差があるが ABI が同一
-# (cp313-pyodide_2025_0_wasm32) なので import 互換。
-# pyfetch 経由で導入するため pyodide-lock.json の sha256 検証は通らない (関係なし)。
+# Route B: C-extension packages requiring Pyodide-specific emscripten builds (not on PyPI).
+# Fetched directly from Pyodide upstream (jsdelivr v0.28.0/full) with ABI 2025_0 wheels.
+# OWUI bundled Pyodide (0.28.0.dev0) and v0.28.0 differ in revision but share the same ABI
+# (cp313-pyodide_2025_0_wasm32), so imports are compatible.
+# Loaded via pyfetch, so pyodide-lock.json sha256 verification does not apply (irrelevant).
 ARG PYODIDE_CDN=https://cdn.jsdelivr.net/pyodide/v0.28.0/full
 RUN for whl in \
         lxml-5.4.0-cp313-cp313-pyodide_2025_0_wasm32.whl \
@@ -77,9 +77,9 @@ RUN for whl in \
         curl -fSL -o "/app/build/static/pyodide-extra/$whl" "$PYODIDE_CDN/$whl" ; \
     done
 
-# index.json を自動生成: {PEP 503 正規化名: wheel filename}。
-# model にはパッケージ名だけ書かせれば、ブラウザ側で index を引いて
-# 正確な wheel filename に解決できる (filename hallucination 防止)。
+# Auto-generate index.json: {PEP 503 normalized name: wheel filename}.
+# The model only needs to list package names; the browser resolves them
+# to exact wheel filenames via this index (prevents filename hallucination).
 RUN python -c "import json, pathlib, re; \
 d = pathlib.Path('/app/build/static/pyodide-extra'); \
 idx = {re.sub(r'[-_.]+', '-', w.name.split('-')[0]).lower(): w.name \
@@ -88,27 +88,27 @@ idx = {re.sub(r'[-_.]+', '-', w.name.split('-')[0]).lower(): w.name \
 print('index.json:', json.dumps(idx, indent=2, sort_keys=True))"
 
 # ─────────────────────────────────────────────
-# 日本語フォント (matplotlib / fpdf2 用)
+# Japanese font (for matplotlib / fpdf2)
 # ─────────────────────────────────────────────
-# Pyodide には日本語グリフを持つフォントが無いので、matplotlib の plot や fpdf2 の
-# PDF 出力で日本語が tofu (□) になる。OFL ライセンスの Noto Sans JP Regular OTF を
-# 同一オリジン /static/fonts/ から配信し、prompt の snippet が pyfetch でロードする。
-# notofonts/noto-cjk 公式の Japanese subset OTF, 約 4.5MB (family 名が
-# "Noto Sans JP" で正しく入っている版。fontsource の同名 TTF は family 名が
-# "Noto Sans JP Thin" になっており matplotlib の lookup を壊すため不可)。
+# Pyodide has no fonts with Japanese glyphs, so matplotlib plots and fpdf2
+# PDF output render Japanese as tofu (□). Serve an OFL-licensed Noto Sans JP
+# Regular OTF from same-origin /static/fonts/ and load it via pyfetch in the prompt.
+# Official notofonts/noto-cjk Japanese subset OTF, ~4.5MB (the version where
+# the family name is correctly set to "Noto Sans JP". The fontsource TTF of the
+# same name has the family name "Noto Sans JP Thin", which breaks matplotlib lookup).
 RUN mkdir -p /app/build/static/fonts \
  && curl -fSL \
         -o /app/build/static/fonts/NotoSansJP-Regular.otf \
         https://github.com/notofonts/noto-cjk/raw/main/Sans/SubsetOTF/JP/NotoSansJP-Regular.otf
 
 # ─────────────────────────────────────────────
-# OWUI ハードコード prompt の差し替え
+# Replace OWUI hardcoded prompt
 # ─────────────────────────────────────────────
-# CODE_INTERPRETER_PYODIDE_PROMPT は env で上書きできない文字列定数で
-# "Do not install packages ... micropip.install() are not available" を含む。
-# LLENS は /static/pyodide-extra/ 経由の micropip を許可する設計のため、
-# prompts/code-interpreter.md (= 単一情報源) の中身で定数ブロックを置換する。
-# build context が repo root のため、COPY パスは repo 相対で指定。
+# CODE_INTERPRETER_PYODIDE_PROMPT is a string constant that cannot be overridden via env,
+# containing "Do not install packages ... micropip.install() are not available".
+# LLENS allows micropip via /static/pyodide-extra/, so we replace the constant block
+# with the content of prompts/code-interpreter.md (= single source of truth).
+# Build context is repo root, so COPY paths are relative to the repo.
 COPY docker/open-webui/patch-pyodide-prompt.py /tmp/patch-pyodide-prompt.py
 COPY prompts/code-interpreter.md /tmp/code-interpreter.md
 RUN python /tmp/patch-pyodide-prompt.py \

@@ -1,12 +1,12 @@
-"""Runner for JMLE2026-Bench (naoto-iwase/JMLE2026-Bench) — 第120回医師国家試験。
+"""Runner for JMLE2026-Bench (naoto-iwase/JMLE2026-Bench) — 120th National Medical Licensing Exam.
 
 400 problems / blocks A-F / 500-pt scale (B/E Q26-50 = 3pt, others = 1pt).
 Prompt format mirrors upstream `benchmark.py` so results are directly
 comparable to the public leaderboard at github.com/naoto-iwase/JMLE2026-Bench.
 
 Vision auto-probe: red-square synthetic image probe at startup.
-- vision OK: image-bearing problems passed multimodally → `Overall (All 400)` 列が埋まる
-- vision NG / --no-vision: image-bearing problems も **テキストのみで盲解き** (LB の `image_mode=blind` default に準拠) → `Overall` 列も埋まるが Text-only モデルの数値として記録
+- vision OK: image-bearing problems passed multimodally -> the `Overall (All 400)` column is filled
+- vision NG / --no-vision: image-bearing problems are solved **text-only blind** (following the LB `image_mode=blind` default) -> the `Overall` column is also filled but recorded as text-only model values
 """
 
 from __future__ import annotations
@@ -38,20 +38,20 @@ LETTERS = "abcde"
 
 # Upstream benchmark.py system prompts (verbatim) — required for LB parity.
 SYSTEM_PROMPT_CHOICE = """\
-あなたは医師国家試験を解く医学の専門家です。
-問題を読み、正解を{n}つ選んでください。
+You are a medical expert solving National Medical Licensing Examination questions.
+Read the question and select {n} correct answer(s).
 
-最終回答は必ず以下の形式で出力してください:
-【回答】{example}"""
+Your final answer must be output in the following format:
+[Answer] {example}"""
 
 SYSTEM_PROMPT_CALC = """\
-あなたは医師国家試験を解く医学の専門家です。
-問題を読み、数値で回答してください。
+You are a medical expert solving National Medical Licensing Examination questions.
+Read the question and answer with a numeric value.
 
-最終回答は必ず以下の形式で出力してください:
-【回答】3.14"""
+Your final answer must be output in the following format:
+[Answer] 3.14"""
 
-ANSWER_PATTERN = re.compile(r"【回答】\s*(.+)")
+ANSWER_PATTERN = re.compile(r"\[Answer\]\s*(.+)")
 
 
 @dataclass
@@ -82,7 +82,7 @@ def load_problems() -> list[dict[str, Any]]:
 
 
 def points_for(entry: dict[str, Any]) -> int:
-    """Official scoring: 必修 (B/E) Q26-50 = 3pt, それ以外 1pt。"""
+    """Official scoring: Required (B/E) Q26-50 = 3pt, all others 1pt."""
     if entry["block"] not in REQUIRED_BLOCKS:
         return 1
     return 3 if 26 <= entry["number"] <= 50 else 1
@@ -192,7 +192,7 @@ def probe_vision(base_url: str, model: str) -> bool:
     except Exception:
         return False
     full = ((r.reasoning_content or "") + " " + (r.content or "")).lower()
-    return "red" in full or "赤" in full or "まっか" in full
+    return "red" in full
 
 
 def run(
@@ -219,13 +219,13 @@ def run(
         probe_status = "vision OK → image_mode=vision" if vision_supported else "vision NG → image_mode=blind (LB default)"
     print(f"[probe] {probe_status}")
 
-    # LB default = blind: vision 不可でも画像問題は除外せず、テキストのみで強制解答させる。
-    # build_messages() 側で vision=False ならテキストのみ送る挙動になっている。
+    # LB default = blind: even when vision is unavailable, image questions are not excluded;
+    # they are force-answered text-only. build_messages() sends text-only when vision=False.
     if limit:
         problems = problems[:limit]
 
-    # `thinking` (Kimi/V3.2) と `enable_thinking` (GLM) を両方送る。
-    # 関係ないキーは各モデルの template が無視する。
+    # Send both `thinking` (Kimi/V3.2) and `enable_thinking` (GLM).
+    # Irrelevant keys are ignored by each model's template.
     extra_body: dict[str, Any] = {
         "chat_template_kwargs": {
             "thinking": not no_think,
@@ -484,7 +484,7 @@ def main() -> int:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--blocks", nargs="+", default=ALL_BLOCKS, choices=ALL_BLOCKS)
     parser.add_argument("--no-vision", action="store_true",
-                        help="vision auto-probe をスキップし、画像問題を最初から除外する")
+                        help="Skip vision auto-probe and exclude image questions from the start")
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--no-think", action="store_true")
     parser.add_argument("--max-tokens", type=int, default=32768)

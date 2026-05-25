@@ -2,8 +2,9 @@
 title: Medical Calculator
 author: Ken Enda
 version: 0.1
-description: 臨床で頻用される、手計算が煩雑かつ誤りやすい医学計算・スコアリングツール。
-             使い方の詳細は SKILL 側で取り出すこと。
+description: Medical calculation and scoring tools frequently used in clinical practice
+             that are cumbersome and error-prone when done by hand.
+             Refer to the SKILL side for detailed usage instructions.
 requirements:
 """
 
@@ -13,25 +14,27 @@ from pydantic import BaseModel, Field
 
 
 class Tools:
-    """医療計算ツール群。すべて prefix `calc_` で統一。
+    """Medical calculation tool collection. All prefixed with `calc_`.
 
-    対象: 算術モジュール任せでは精度が出ない、または式の分岐や閾値判定が
-    複雑で手計算ミスが起きやすいもののみ。BMI / BSA / 補正Ca / A-aDO2 等の
-    単純な式は本ツールには含めない（モデル側の算術で十分）。
+    Scope: Only calculations where arithmetic modules alone lack precision,
+    or where formula branching and threshold logic make manual computation
+    error-prone. Simple formulas like BMI / BSA / corrected Ca / A-aDO2
+    are not included here (model-side arithmetic is sufficient).
     """
 
     class Valves(BaseModel):
-        # 現状外部依存なし。将来 reference range や施設標準式の差し替えに備えて確保。
+        # No external dependencies at present. Reserved for future reference range
+        # or institution-specific formula substitution.
         institution_egfr_default: str = Field(
             default="ckdepi_2021",
-            description="eGFRのデフォルト式 (ckdepi_2021 / jsn / mdrd)",
+            description="Default eGFR formula (ckdepi_2021 / jsn / mdrd)",
         )
 
     def __init__(self) -> None:
         self.valves = self.Valves()
 
     # =========================================================================
-    # 腎機能
+    # Renal function
     # =========================================================================
 
     def calc_egfr_ckdepi2021(
@@ -41,12 +44,12 @@ class Tools:
         sex: Literal["M", "F"],
         japanese_coefficient: bool = False,
     ) -> Dict[str, Any]:
-        """CKD-EPI 2021式によるeGFRを計算する (mL/min/1.73m²)。
+        """Calculate eGFR using the CKD-EPI 2021 equation (mL/min/1.73m2).
 
-        :param cr: 血清クレアチニン (mg/dL)
-        :param age: 年齢 (歳)
-        :param sex: "M" または "F"
-        :param japanese_coefficient: 日本人補正係数 (×0.813) を適用するか
+        :param cr: Serum creatinine (mg/dL)
+        :param age: Age (years)
+        :param sex: "M" or "F"
+        :param japanese_coefficient: Whether to apply the Japanese coefficient (x0.813)
         :return: {egfr, formula, japanese_coefficient_applied, ckd_stage}
         """
         # CKD-EPI 2021 (race-free)
@@ -65,7 +68,7 @@ class Tools:
         if japanese_coefficient:
             egfr *= 0.813
 
-        # CKDステージ判定
+        # CKD stage classification
         if egfr >= 90:
             stage = "G1"
         elif egfr >= 60:
@@ -81,7 +84,7 @@ class Tools:
 
         return {
             "egfr": round(egfr, 1),
-            "unit": "mL/min/1.73m²",
+            "unit": "mL/min/1.73m2",
             "formula": "CKD-EPI 2021 (race-free)",
             "japanese_coefficient_applied": japanese_coefficient,
             "ckd_stage": stage,
@@ -94,13 +97,13 @@ class Tools:
         sex: Literal["M", "F"],
         weight_kg: float,
     ) -> Dict[str, Any]:
-        """Cockcroft-Gault式によるクレアチニンクリアランス (mL/min) を計算する。
-        薬剤投与量調整に用いる。体表面積補正は行わない (絶対値)。
+        """Calculate creatinine clearance (mL/min) using the Cockcroft-Gault equation.
+        Used for drug dosage adjustment. No body surface area correction (absolute value).
 
-        :param cr: 血清クレアチニン (mg/dL)
-        :param age: 年齢 (歳)
-        :param sex: "M" または "F"
-        :param weight_kg: 体重 (kg)。肥満例では IBW または AdjBW の使用を検討すること。
+        :param cr: Serum creatinine (mg/dL)
+        :param age: Age (years)
+        :param sex: "M" or "F"
+        :param weight_kg: Body weight (kg). Consider using IBW or AdjBW for obese patients.
         :return: {ccr, unit, formula, note}
         """
         ccr = ((140 - age) * weight_kg) / (72 * cr)
@@ -111,14 +114,14 @@ class Tools:
             "unit": "mL/min",
             "formula": "Cockcroft-Gault",
             "note": (
-                "体表面積補正なし。薬剤投与量調整に用いる場合は本値を使用する。"
-                "肥満例 (BMI≥30) では実体重ではなく IBW あるいは AdjBW での"
-                "再計算を検討すること。"
+                "No body surface area correction. Use this value for drug dosage adjustment. "
+                "For obese patients (BMI>=30), consider recalculating with IBW or AdjBW "
+                "instead of actual body weight."
             ),
         }
 
     # =========================================================================
-    # 肝
+    # Hepatic
     # =========================================================================
 
     def calc_meld_na(
@@ -129,18 +132,18 @@ class Tools:
         na: float,
         dialysis_2x_in_last_week: bool = False,
     ) -> Dict[str, Any]:
-        """MELD-Na スコアを計算する (移植適応評価等)。
+        """Calculate MELD-Na score (for transplant eligibility evaluation, etc.).
 
-        :param bilirubin: 総ビリルビン (mg/dL)
-        :param cr: 血清クレアチニン (mg/dL)。透析時は 4.0 にクリップ。
+        :param bilirubin: Total bilirubin (mg/dL)
+        :param cr: Serum creatinine (mg/dL). Clipped to 4.0 for dialysis patients.
         :param inr: PT-INR
-        :param na: 血清Na (mEq/L)。125-137の範囲にクリップ。
-        :param dialysis_2x_in_last_week: 過去7日以内に2回以上の透析または24h CRRT
+        :param na: Serum Na (mEq/L). Clipped to 125-137 range.
+        :param dialysis_2x_in_last_week: 2 or more dialysis sessions or 24h CRRT in past 7 days
         :return: {meld, meld_na, components}
         """
         import math
 
-        # 各値の下限クリップ (1.0未満は1.0として扱う)
+        # Lower bound clipping (values below 1.0 are treated as 1.0)
         bili = max(bilirubin, 1.0)
         inr_c = max(inr, 1.0)
         cr_c = max(cr, 1.0)
@@ -156,7 +159,7 @@ class Tools:
         meld = round(meld)
         meld = max(6, min(meld, 40))
 
-        # MELD-Na (UNOS 2016式)
+        # MELD-Na (UNOS 2016 formula)
         na_c = max(125, min(na, 137))
         if meld > 11:
             meld_na = meld + 1.32 * (137 - na_c) - (0.033 * meld * (137 - na_c))
@@ -175,7 +178,7 @@ class Tools:
                 "na_used": na_c,
                 "dialysis_adjustment_applied": dialysis_2x_in_last_week or cr >= 4.0,
             },
-            "note": "UNOS 2016 MELD-Na式。MELD≤11ではMELD-Na=MELDとなる。",
+            "note": "UNOS 2016 MELD-Na formula. When MELD<=11, MELD-Na equals MELD.",
         }
 
     def calc_albi_grade(
@@ -183,15 +186,15 @@ class Tools:
         albumin_g_dl: float,
         bilirubin_mg_dl: float,
     ) -> Dict[str, Any]:
-        """ALBI score / grade を計算する (肝予備能評価、HCC等で頻用)。
+        """Calculate ALBI score / grade (hepatic reserve assessment, frequently used in HCC, etc.).
 
-        :param albumin_g_dl: アルブミン (g/dL)
-        :param bilirubin_mg_dl: 総ビリルビン (mg/dL)
+        :param albumin_g_dl: Albumin (g/dL)
+        :param bilirubin_mg_dl: Total bilirubin (mg/dL)
         :return: {albi_score, albi_grade, note}
         """
         import math
 
-        # ALBIは bilirubin µmol/L, albumin g/L で定義されているため単位変換
+        # ALBI is defined with bilirubin in umol/L and albumin in g/L, so unit conversion is needed
         bili_umol = bilirubin_mg_dl * 17.1
         alb_g_l = albumin_g_dl * 10
         albi = math.log10(bili_umol) * 0.66 + alb_g_l * (-0.085)
@@ -207,9 +210,9 @@ class Tools:
             "albi_score": round(albi, 3),
             "albi_grade": grade,
             "note": (
-                "Grade 1: 最良 (中央値 OS 18.5-85.6ヶ月), "
-                "Grade 2: 中間, "
-                "Grade 3: 最不良 (中央値 OS 5.3-6.2ヶ月)。"
+                "Grade 1: Best (median OS 18.5-85.6 months), "
+                "Grade 2: Intermediate, "
+                "Grade 3: Worst (median OS 5.3-6.2 months)."
             ),
         }
 
@@ -220,54 +223,55 @@ class Tools:
         plt_10e4_per_ul: float,
         age: int,
     ) -> Dict[str, Any]:
-        """FIB-4 indexを計算する (慢性肝疾患の線維化スクリーニング)。
+        """Calculate FIB-4 index (fibrosis screening for chronic liver disease).
 
         :param ast: AST (U/L)
-        :param alt: ALT (U/L)。0は不可。
-        :param plt_10e4_per_ul: 血小板数 (×10^4/µL)。日本表記。
-        :param age: 年齢 (歳)
+        :param alt: ALT (U/L). Must not be 0.
+        :param plt_10e4_per_ul: Platelet count (x10^4/uL, Japanese notation).
+        :param age: Age (years)
         :return: {fib4, interpretation, note}
 
-        注意: 慢性肝炎 (HCV/HBV/NAFLD) の線維化スクリーニング目的。
-              急性肝障害には適用しない。
+        Note: For fibrosis screening in chronic hepatitis (HCV/HBV/NAFLD).
+              Not applicable to acute liver injury.
         """
         import math
 
-        # 日本表記 (×10^4/µL) → 米国表記 (×10^9/L) は同値 (×10^4/µL = ×10/nL = ×10^9/L*0.01)
-        # FIB-4は分母 PLT(×10^9/L) で定義。1×10^4/µL = 10×10^9/L → ×10
+        # Japanese notation (x10^4/uL) to US notation (x10^9/L) is equivalent
+        # (x10^4/uL = x10/nL = x10^9/L*0.01)
+        # FIB-4 denominator is defined as PLT(x10^9/L). 1x10^4/uL = 10x10^9/L -> x10
         plt_10e9_l = plt_10e4_per_ul * 10
         if plt_10e9_l == 0 or alt <= 0:
-            return {"error": "PLTおよびALTは正値である必要がある"}
+            return {"error": "PLT and ALT must be positive values"}
 
         fib4 = (age * ast) / (plt_10e9_l * math.sqrt(alt))
 
-        # 65歳未満と以上で閾値が異なる (NAFLD)
+        # Thresholds differ for age <65 vs >=65 (NAFLD)
         if age < 65:
             low, high = 1.30, 2.67
         else:
             low, high = 2.0, 2.67
 
         if fib4 < low:
-            interp = "low_risk (進行線維化の可能性低い)"
+            interp = "low_risk (advanced fibrosis unlikely)"
         elif fib4 < high:
-            interp = "indeterminate (追加評価が望ましい)"
+            interp = "indeterminate (further evaluation recommended)"
         else:
-            interp = "high_risk (進行線維化の可能性、専門医紹介を考慮)"
+            interp = "high_risk (advanced fibrosis likely, consider specialist referral)"
 
         return {
             "fib4": round(fib4, 2),
             "interpretation": interp,
-            "thresholds_used": {"low": low, "high": high, "age_group": "<65" if age < 65 else "≥65"},
-            "note": "慢性肝炎 (HCV/HBV/NAFLD) のスクリーニング指標。急性肝障害には不適。",
+            "thresholds_used": {"low": low, "high": high, "age_group": "<65" if age < 65 else ">=65"},
+            "note": "Screening index for chronic hepatitis (HCV/HBV/NAFLD). Not suitable for acute liver injury.",
         }
 
     # =========================================================================
-    # 集中治療 / 救急
+    # Critical care / Emergency
     # =========================================================================
 
     def calc_apache2(
         self,
-        # APS (Acute Physiology Score) 12項目
+        # APS (Acute Physiology Score) 12 items
         temp_c: float,
         map_mmhg: float,
         hr: int,
@@ -283,37 +287,37 @@ class Tools:
         hct: float = 40,
         wbc_10e3_ul: float = 8.0,
         gcs: int = 15,
-        # 年齢
+        # Age
         age: int = 50,
-        # 慢性疾患
+        # Chronic disease
         chronic_organ_failure: bool = False,
         admission_type: Literal[
             "non_op", "emergency_post_op", "elective_post_op"
         ] = "non_op",
     ) -> Dict[str, Any]:
-        """APACHE II スコアを計算する (ICU入室時24時間以内の最悪値で算出)。
+        """Calculate APACHE II score (computed from worst values within 24 hours of ICU admission).
 
-        :param temp_c: 体温 (℃、直腸温が標準)
-        :param map_mmhg: 平均動脈圧 (mmHg)
-        :param hr: 心拍数 (/min)
-        :param rr: 呼吸数 (/min)
-        :param fio2: 吸入酸素濃度 (0.21-1.0)
-        :param pao2: PaO2 (mmHg)。FiO2<0.5の時に使用。
-        :param a_ado2: A-aDO2 (mmHg)。FiO2≥0.5の時に使用。
-        :param ph: 動脈血pH (HCO3代用なら別途代用スコアあり、本実装はpH優先)
-        :param na: 血清Na (mEq/L)
-        :param k: 血清K (mEq/L)
-        :param cr_mg_dl: 血清Cr (mg/dL)
-        :param acute_renal_failure: 急性腎不全 (Crスコアが2倍になる)
-        :param hct: ヘマトクリット (%)
-        :param wbc_10e3_ul: 白血球数 (×10³/µL)
-        :param gcs: GCS合計
-        :param age: 年齢 (歳)
-        :param chronic_organ_failure: 重度慢性臓器不全または免疫不全あり
-        :param admission_type: 入室区分
+        :param temp_c: Temperature (degrees C, rectal is standard)
+        :param map_mmhg: Mean arterial pressure (mmHg)
+        :param hr: Heart rate (/min)
+        :param rr: Respiratory rate (/min)
+        :param fio2: Fraction of inspired oxygen (0.21-1.0)
+        :param pao2: PaO2 (mmHg). Used when FiO2 < 0.5.
+        :param a_ado2: A-aDO2 (mmHg). Used when FiO2 >= 0.5.
+        :param ph: Arterial blood pH (this implementation prioritizes pH over HCO3 substitute)
+        :param na: Serum Na (mEq/L)
+        :param k: Serum K (mEq/L)
+        :param cr_mg_dl: Serum Cr (mg/dL)
+        :param acute_renal_failure: Acute renal failure (Cr score is doubled)
+        :param hct: Hematocrit (%)
+        :param wbc_10e3_ul: White blood cell count (x10^3/uL)
+        :param gcs: GCS total
+        :param age: Age (years)
+        :param chronic_organ_failure: Severe chronic organ failure or immunocompromised
+        :param admission_type: Admission category
         :return: {apache2, aps, age_points, chronic_health_points, mortality_estimate, breakdown}
         """
-        # --- APS 各項目のスコアリング ---
+        # --- APS individual item scoring ---
         def score_temp(t):
             if t >= 41 or t < 30: return 4
             if t >= 39 or t < 32: return 3
@@ -343,7 +347,7 @@ class Tools:
         def score_oxy(fio2_, pao2_, aado2_):
             if fio2_ >= 0.5:
                 if aado2_ is None:
-                    return None  # 呼べない
+                    return None  # cannot compute
                 if aado2_ >= 500: return 4
                 if aado2_ >= 350: return 3
                 if aado2_ >= 200: return 2
@@ -357,8 +361,8 @@ class Tools:
                 return 0
 
         def score_ph(p):
-            # APACHE II 原典 (Knaus 1985) のpHスコア表
-            # ≥7.70:4, 7.60-7.69:3, 7.50-7.59:1, 7.33-7.49:0,
+            # APACHE II original (Knaus 1985) pH score table
+            # >=7.70:4, 7.60-7.69:3, 7.50-7.59:1, 7.33-7.49:0,
             # 7.25-7.32:2, 7.15-7.24:3, <7.15:4
             if p >= 7.70 or p < 7.15: return 4
             if p >= 7.60 or p < 7.25: return 3
@@ -417,8 +421,8 @@ class Tools:
         if oxy is None:
             return {
                 "error": (
-                    "酸素化スコアを計算できない: FiO2≥0.5の場合は a_ado2 を、"
-                    "FiO2<0.5の場合は pao2 を指定してください。"
+                    "Cannot compute oxygenation score: provide a_ado2 when FiO2 >= 0.5, "
+                    "or pao2 when FiO2 < 0.5."
                 )
             }
 
@@ -448,60 +452,61 @@ class Tools:
             "chronic_health_points": chronic_points,
             "breakdown": breakdown,
             "note": (
-                "ICU入室24時間以内の最悪値を入力すること。"
-                "死亡率推定は疾患別の係数が必要であり本関数では返さない。"
+                "Use worst values within 24 hours of ICU admission. "
+                "Mortality estimation requires disease-specific coefficients "
+                "and is not returned by this function."
             ),
         }
 
     def calc_sofa(
         self,
-        # 呼吸 (PaO2/FiO2)
+        # Respiration (PaO2/FiO2)
         pao2_fio2_ratio: Optional[float] = None,
         mechanical_ventilation: bool = False,
-        # 凝固
+        # Coagulation
         plt_10e4_ul: Optional[float] = None,
-        # 肝
+        # Hepatic
         bilirubin_mg_dl: Optional[float] = None,
-        # 循環
+        # Cardiovascular
         map_mmhg: Optional[float] = None,
         vasopressor: Literal[
             "none",
-            "dopamine_low",        # ≤5 µg/kg/min または ドブタミンのみ
-            "dopamine_mid",        # 5.1-15 µg/kg/min または ノルアド/エピネ ≤0.1 µg/kg/min
-            "dopamine_high",       # >15 µg/kg/min または ノルアド/エピネ >0.1 µg/kg/min
+            "dopamine_low",        # <=5 ug/kg/min or dobutamine only
+            "dopamine_mid",        # 5.1-15 ug/kg/min or norepinephrine/epinephrine <=0.1 ug/kg/min
+            "dopamine_high",       # >15 ug/kg/min or norepinephrine/epinephrine >0.1 ug/kg/min
         ] = "none",
-        # 中枢神経
+        # Central nervous system
         gcs: Optional[int] = None,
-        # 腎
+        # Renal
         cr_mg_dl: Optional[float] = None,
         urine_output_ml_per_day: Optional[float] = None,
     ) -> Dict[str, Any]:
-        """SOFA (Sequential Organ Failure Assessment) スコアを計算する。
-        敗血症診断 (Sepsis-3) や ICU での経時的評価に使用。
+        """Calculate SOFA (Sequential Organ Failure Assessment) score.
+        Used for sepsis diagnosis (Sepsis-3) and serial ICU assessment.
 
-        :param pao2_fio2_ratio: PaO2/FiO2比 (mmHg)。例: PaO2 80, FiO2 0.4 なら 200
-        :param mechanical_ventilation: 機械換気中か (P/F<200 のスコア判定で使用)
-        :param plt_10e4_ul: 血小板 (×10^4/µL、日本表記)
-        :param bilirubin_mg_dl: 総ビリルビン (mg/dL)
-        :param map_mmhg: 平均動脈圧 (mmHg)
-        :param vasopressor: 昇圧剤の使用状況。詳細は下記
-        :param gcs: GCS合計
-        :param cr_mg_dl: 血清Cr (mg/dL)
-        :param urine_output_ml_per_day: 1日尿量 (mL/day)
+        :param pao2_fio2_ratio: PaO2/FiO2 ratio (mmHg). Example: PaO2 80, FiO2 0.4 = 200
+        :param mechanical_ventilation: Whether on mechanical ventilation (used for P/F<200 scoring)
+        :param plt_10e4_ul: Platelets (x10^4/uL, Japanese notation)
+        :param bilirubin_mg_dl: Total bilirubin (mg/dL)
+        :param map_mmhg: Mean arterial pressure (mmHg)
+        :param vasopressor: Vasopressor use status. See details below
+        :param gcs: GCS total
+        :param cr_mg_dl: Serum Cr (mg/dL)
+        :param urine_output_ml_per_day: Daily urine output (mL/day)
         :return: {sofa, breakdown, missing_organs, note}
 
-        昇圧剤カテゴリ:
-        - none: 昇圧剤なし
-        - dopamine_low: ドパミン ≤5 µg/kg/min または ドブタミンのみ
-        - dopamine_mid: ドパミン 5.1-15 または ノルアド/エピネ ≤0.1 µg/kg/min
-        - dopamine_high: ドパミン >15 または ノルアド/エピネ >0.1 µg/kg/min
+        Vasopressor categories:
+        - none: No vasopressors
+        - dopamine_low: Dopamine <=5 ug/kg/min or dobutamine only
+        - dopamine_mid: Dopamine 5.1-15 or norepinephrine/epinephrine <=0.1 ug/kg/min
+        - dopamine_high: Dopamine >15 or norepinephrine/epinephrine >0.1 ug/kg/min
 
-        欠損項目はスコアに含めず breakdown を None として返す。
+        Missing items are not included in the score and shown as None in breakdown.
         """
         breakdown: Dict[str, Optional[int]] = {}
         missing = []
 
-        # 呼吸
+        # Respiration
         if pao2_fio2_ratio is not None:
             if pao2_fio2_ratio >= 400:
                 pts = 0
@@ -518,9 +523,9 @@ class Tools:
             breakdown["respiration"] = None
             missing.append("respiration (PaO2/FiO2)")
 
-        # 凝固 (PLTは ×10^9/L で定義されているが、日本表記 ×10^4/µL は同値*10)
+        # Coagulation (PLT is defined in x10^9/L, but Japanese notation x10^4/uL is equivalent*10)
         if plt_10e4_ul is not None:
-            plt_10e9_l = plt_10e4_ul * 10  # ×10^9/L 換算
+            plt_10e9_l = plt_10e4_ul * 10  # Convert to x10^9/L
             if plt_10e9_l >= 150: pts = 0
             elif plt_10e9_l >= 100: pts = 1
             elif plt_10e9_l >= 50: pts = 2
@@ -531,7 +536,7 @@ class Tools:
             breakdown["coagulation"] = None
             missing.append("coagulation (PLT)")
 
-        # 肝
+        # Hepatic
         if bilirubin_mg_dl is not None:
             if bilirubin_mg_dl < 1.2: pts = 0
             elif bilirubin_mg_dl < 2.0: pts = 1
@@ -543,7 +548,7 @@ class Tools:
             breakdown["liver"] = None
             missing.append("liver (bilirubin)")
 
-        # 循環
+        # Cardiovascular
         if vasopressor == "dopamine_high":
             pts = 4
         elif vasopressor == "dopamine_mid":
@@ -557,7 +562,7 @@ class Tools:
             missing.append("cardiovascular (MAP or vasopressor)")
         breakdown["cardiovascular"] = pts
 
-        # 中枢神経
+        # Central nervous system
         if gcs is not None:
             if gcs == 15: pts = 0
             elif gcs >= 13: pts = 1
@@ -569,7 +574,7 @@ class Tools:
             breakdown["cns"] = None
             missing.append("cns (GCS)")
 
-        # 腎
+        # Renal
         cr_pts = None
         uo_pts = None
         if cr_mg_dl is not None:
@@ -600,15 +605,16 @@ class Tools:
             "breakdown": breakdown,
             "missing_organs": missing,
             "note": (
-                "Sepsis-3定義: 感染症に伴うSOFA急上昇 (≥2点) で敗血症と判断。"
-                "経時的評価では同一患者でのトレンドが重要。"
-                "本関数は欠損項目をスコアに含めない (0点ではなくNone扱い)。"
-                "全項目が揃わない場合、欠損項目を補完してから再計算することを推奨。"
+                "Sepsis-3 definition: Sepsis is diagnosed when infection causes "
+                "an acute SOFA increase (>=2 points). "
+                "Serial assessment trends within the same patient are important. "
+                "This function does not include missing items in the score (treated as None, not 0). "
+                "If not all items are available, supplement missing items and recalculate."
             ),
         }
 
     # =========================================================================
-    # 消化器
+    # Gastrointestinal
     # =========================================================================
 
     def calc_glasgow_blatchford(
@@ -623,17 +629,17 @@ class Tools:
         hepatic_disease: bool,
         cardiac_failure: bool,
     ) -> Dict[str, Any]:
-        """Glasgow-Blatchford Score (GBS) を計算する (上部消化管出血のリスク層別)。
+        """Calculate Glasgow-Blatchford Score (GBS) (risk stratification for upper GI bleeding).
 
         :param bun_mg_dl: BUN (mg/dL)
-        :param hb_g_dl: ヘモグロビン (g/dL)
-        :param sex: 性別 ("M"/"F")
-        :param sbp_mmhg: 収縮期血圧 (mmHg)
-        :param hr: 心拍数 (/min)
-        :param melena: 黒色便あり
-        :param syncope: 失神あり
-        :param hepatic_disease: 肝疾患の既往
-        :param cardiac_failure: 心不全の既往
+        :param hb_g_dl: Hemoglobin (g/dL)
+        :param sex: Sex ("M"/"F")
+        :param sbp_mmhg: Systolic blood pressure (mmHg)
+        :param hr: Heart rate (/min)
+        :param melena: Melena present
+        :param syncope: Syncope present
+        :param hepatic_disease: History of hepatic disease
+        :param cardiac_failure: History of cardiac failure
         :return: {gbs, risk_category, note}
         """
         score = 0
@@ -644,7 +650,7 @@ class Tools:
         elif bun_mg_dl >= 22.4: score += 3
         elif bun_mg_dl >= 18.2: score += 2
 
-        # Hb (性別別閾値)
+        # Hb (sex-specific thresholds)
         if sex == "M":
             if hb_g_dl < 10: score += 6
             elif hb_g_dl < 12: score += 3
@@ -658,62 +664,62 @@ class Tools:
         elif sbp_mmhg < 100: score += 2
         elif sbp_mmhg < 110: score += 1
 
-        # その他
+        # Other
         if hr >= 100: score += 1
         if melena: score += 1
         if syncope: score += 2
         if hepatic_disease: score += 2
         if cardiac_failure: score += 2
 
-        # リスク評価
+        # Risk assessment
         if score == 0:
-            cat = "very_low (外来管理を考慮可能)"
+            cat = "very_low (outpatient management may be considered)"
         elif score <= 3:
             cat = "low"
         elif score <= 7:
             cat = "moderate"
         else:
-            cat = "high (緊急介入の検討)"
+            cat = "high (consider urgent intervention)"
 
         return {
             "gbs": score,
             "risk_category": cat,
-            "note": "GBS=0は外来管理の候補。≥7では介入が必要となることが多い。",
+            "note": "GBS=0 is a candidate for outpatient management. >=7 often requires intervention.",
         }
 
     def calc_ranson_criteria(
         self,
         timing: Literal["admission", "48h"],
-        # 入院時項目
+        # Admission items
         age: Optional[int] = None,
         wbc_10e3_ul: Optional[float] = None,
         glucose_mg_dl: Optional[float] = None,
         ldh_u_l: Optional[float] = None,
         ast_u_l: Optional[float] = None,
-        # 48時間項目
+        # 48-hour items
         hct_drop_pct: Optional[float] = None,
         bun_increase_mg_dl: Optional[float] = None,
         ca_mg_dl: Optional[float] = None,
         pao2_mmhg: Optional[float] = None,
         base_deficit: Optional[float] = None,
         fluid_sequestration_l: Optional[float] = None,
-        # 病因
+        # Etiology
         gallstone_etiology: bool = False,
     ) -> Dict[str, Any]:
-        """Ransonクライテリアを計算する (急性膵炎の重症度評価)。
-        入院時5項目と48時間後6項目を別々に評価する。
+        """Calculate Ranson criteria (severity assessment for acute pancreatitis).
+        Evaluates 5 admission items and 6 items at 48 hours separately.
 
-        :param timing: "admission" (入院時) または "48h" (48時間後)
-        :param gallstone_etiology: 胆石性膵炎の場合 True (閾値が一部変わる)
+        :param timing: "admission" or "48h" (at 48 hours)
+        :param gallstone_etiology: True for gallstone pancreatitis (some thresholds change)
         :return: {timing, score, criteria_met, note}
 
-        注意: 国内では JSS-CT grade や厚労省重症度判定基準のほうが使われる。
-              本関数は欧米由来のRansonをそのまま実装。
+        Note: In Japan, JSS-CT grade and JMHW severity criteria are more commonly used.
+              This function implements the original Western Ranson criteria as-is.
         """
         criteria_met = []
 
         if timing == "admission":
-            # 胆石性 vs 非胆石性で閾値が異なる
+            # Thresholds differ for gallstone vs non-gallstone etiology
             if gallstone_etiology:
                 age_th, wbc_th, glu_th, ldh_th, ast_th = 70, 18, 220, 400, 250
             else:
@@ -749,13 +755,13 @@ class Tools:
             "score": len(criteria_met),
             "criteria_met": criteria_met,
             "note": (
-                "入院時+48時間後の合計≥3で重症膵炎を疑う。"
-                "国内では JSS-CT grade / 厚労省重症度判定基準の併用を推奨。"
+                "A combined admission + 48h total >=3 suggests severe pancreatitis. "
+                "In Japan, concurrent use of JSS-CT grade / JMHW severity criteria is recommended."
             ),
         }
 
     # =========================================================================
-    # 血液 / 凝固
+    # Hematology / Coagulation
     # =========================================================================
 
     def calc_dic_score(
@@ -771,29 +777,29 @@ class Tools:
         bleeding_symptom: bool = False,
         organ_failure: bool = False,
     ) -> Dict[str, Any]:
-        """DIC診断スコアを計算する (ISTH overt / 厚労省2017年改定 造血障害型・非造血障害型)。
+        """Calculate DIC diagnostic score (ISTH overt / JMHW 2017 revised Hematologic / Non-hematologic type).
 
         :param criteria: "isth_overt" / "jmhw_hematologic" / "jmhw_non_hematologic"
-        :param plt_10e4_ul: 血小板 (×10^4/µL、日本表記)
-        :param fdp_ug_ml: FDP (µg/mL)
-        :param d_dimer_ug_ml: D-dimer (µg/mL)。ISTHではFDPの代用可。
-        :param fibrinogen_mg_dl: フィブリノゲン (mg/dL)
-        :param pt_ratio: PT比 (国内基準で使用)
-        :param pt_seconds_prolongation: PT延長秒数 (ISTHで使用)
-        :param underlying_disease: DIC発症の基礎疾患の存在
-        :param bleeding_symptom: 出血症状あり (国内基準のみ)
-        :param organ_failure: 臓器症状あり (国内基準のみ)
+        :param plt_10e4_ul: Platelets (x10^4/uL, Japanese notation)
+        :param fdp_ug_ml: FDP (ug/mL)
+        :param d_dimer_ug_ml: D-dimer (ug/mL). Can substitute for FDP in ISTH.
+        :param fibrinogen_mg_dl: Fibrinogen (mg/dL)
+        :param pt_ratio: PT ratio (used in Japanese criteria)
+        :param pt_seconds_prolongation: PT prolongation in seconds (used in ISTH)
+        :param underlying_disease: Presence of underlying disease for DIC
+        :param bleeding_symptom: Bleeding symptoms present (Japanese criteria only)
+        :param organ_failure: Organ failure present (Japanese criteria only)
         :return: {criteria, score, threshold_for_dic, dic_diagnosis, breakdown}
 
-        注意: 厚労省基準は2017年改定版を実装。造血障害型は血小板項目を除外する。
+        Note: JMHW criteria implements the 2017 revised version. Hematologic type excludes platelet scoring.
         """
         score = 0
         breakdown = {}
 
         if criteria == "isth_overt":
-            # 基礎疾患必須
+            # Underlying disease is required
             if not underlying_disease:
-                return {"error": "ISTH overt DICは基礎疾患の存在が前提。"}
+                return {"error": "ISTH overt DIC requires the presence of an underlying disease."}
 
             # PLT
             if plt_10e4_ul < 5: pts = 2
@@ -801,27 +807,27 @@ class Tools:
             else: pts = 0
             score += pts; breakdown["plt"] = pts
 
-            # FDP or D-dimer (元の摩耗マーカー)
+            # FDP or D-dimer (fibrin-related marker)
             marker = fdp_ug_ml if fdp_ug_ml is not None else d_dimer_ug_ml
             if marker is None:
-                return {"error": "FDPまたはD-dimerのいずれかが必要。"}
-            # ISTH原著はFDPで定義 (>=10で2点, >=5で1点等の閾値はラボ依存)
-            # ここでは中等度上昇=2、軽度上昇=3として簡易判定
-            # 注: 実装では各施設の基準値で再調整推奨
+                return {"error": "Either FDP or D-dimer is required."}
+            # ISTH original is defined by FDP (thresholds like >=10 for 2 pts, >=5 for 1 pt are lab-dependent)
+            # Here simplified as moderate increase=2, strong increase=3
+            # Note: Recalibration to institutional reference ranges is recommended
             if marker >= 25: pts = 3  # strong increase
             elif marker >= 5: pts = 2  # moderate increase
             elif marker > 1: pts = 0  # no increase
             else: pts = 0
             score += pts; breakdown["fibrin_marker"] = pts
 
-            # PT延長 (秒)
+            # PT prolongation (seconds)
             if pt_seconds_prolongation is not None:
                 if pt_seconds_prolongation >= 6: pts = 2
                 elif pt_seconds_prolongation >= 3: pts = 1
                 else: pts = 0
                 score += pts; breakdown["pt_prolongation"] = pts
 
-            # フィブリノゲン
+            # Fibrinogen
             if fibrinogen_mg_dl is not None:
                 pts = 1 if fibrinogen_mg_dl < 100 else 0
                 score += pts; breakdown["fibrinogen"] = pts
@@ -832,24 +838,24 @@ class Tools:
                 "threshold_for_dic": 5,
                 "dic_diagnosis": score >= 5,
                 "breakdown": breakdown,
-                "note": "≥5でovert DIC。<5でnon-overt DIC、経時的再評価を要する。",
+                "note": ">=5 for overt DIC. <5 suggests non-overt DIC; serial reassessment required.",
             }
 
         elif criteria in ("jmhw_hematologic", "jmhw_non_hematologic"):
             is_hematologic = criteria == "jmhw_hematologic"
 
-            # 基礎疾患
+            # Underlying disease
             if underlying_disease:
                 score += 1; breakdown["underlying_disease"] = 1
 
-            # 臨床症状
+            # Clinical symptoms
             if bleeding_symptom and not is_hematologic:
-                # 造血障害型では出血症状を採点しない (血小板低下によるため)
+                # Hematologic type does not score bleeding symptoms (due to thrombocytopenia)
                 score += 1; breakdown["bleeding"] = 1
             if organ_failure:
                 score += 1; breakdown["organ_failure"] = 1
 
-            # 血小板 (造血障害型では採点しない)
+            # Platelets (not scored in hematologic type)
             if not is_hematologic:
                 if plt_10e4_ul < 5: pts = 3
                 elif plt_10e4_ul < 8: pts = 2
@@ -865,14 +871,14 @@ class Tools:
                 else: pts = 0
                 score += pts; breakdown["fdp"] = pts
 
-            # フィブリノゲン
+            # Fibrinogen
             if fibrinogen_mg_dl is not None:
                 if fibrinogen_mg_dl < 100: pts = 2
                 elif fibrinogen_mg_dl < 150: pts = 1
                 else: pts = 0
                 score += pts; breakdown["fibrinogen"] = pts
 
-            # PT比
+            # PT ratio
             if pt_ratio is not None:
                 if pt_ratio >= 1.67: pts = 2
                 elif pt_ratio >= 1.25: pts = 1
@@ -882,21 +888,21 @@ class Tools:
             threshold = 4 if is_hematologic else 7
             return {
                 "criteria": (
-                    "厚労省 造血障害型 (2017)" if is_hematologic
-                    else "厚労省 非造血障害型 (2017)"
+                    "JMHW Hematologic Type (2017)" if is_hematologic
+                    else "JMHW Non-Hematologic Type (2017)"
                 ),
                 "score": score,
                 "threshold_for_dic": threshold,
                 "dic_diagnosis": score >= threshold,
                 "breakdown": breakdown,
                 "note": (
-                    "造血障害型≥4、非造血障害型≥7でDIC。"
-                    "白血病等の造血器腫瘍では造血障害型を選択する。"
+                    "Hematologic type >=4, Non-hematologic type >=7 for DIC. "
+                    "Select hematologic type for hematologic malignancies such as leukemia."
                 ),
             }
 
     # =========================================================================
-    # 酸塩基
+    # Acid-base
     # =========================================================================
 
     def calc_acid_base_analysis(
@@ -908,20 +914,21 @@ class Tools:
         cl: Optional[float] = None,
         albumin_g_dl: Optional[float] = None,
     ) -> Dict[str, Any]:
-        """動脈血ガスを統合解析する: 一次性異常判定 + 代償予測 + AG計算。
+        """Integrated arterial blood gas analysis: primary disorder identification +
+        compensation prediction + AG calculation.
 
-        :param ph: 動脈血pH
+        :param ph: Arterial blood pH
         :param pco2: PaCO2 (mmHg)
         :param hco3: HCO3- (mEq/L)
-        :param na: 血清Na (mEq/L)。AG計算に必要。
-        :param cl: 血清Cl (mEq/L)。AG計算に必要。
-        :param albumin_g_dl: アルブミン (g/dL)。補正AGに使用。
+        :param na: Serum Na (mEq/L). Required for AG calculation.
+        :param cl: Serum Cl (mEq/L). Required for AG calculation.
+        :param albumin_g_dl: Albumin (g/dL). Used for corrected AG.
         :return: {primary_disorder, expected_compensation, compensation_status,
                   anion_gap, corrected_anion_gap, mixed_disorder_suspected, summary}
         """
         result: Dict[str, Any] = {}
 
-        # 一次性判定
+        # Primary disorder identification
         if ph < 7.35:
             if hco3 < 22:
                 primary = "metabolic_acidosis"
@@ -941,26 +948,26 @@ class Tools:
 
         result["primary_disorder"] = primary
 
-        # 代償予測
+        # Compensation prediction
         expected = None
         comp_status = None
         if primary == "metabolic_acidosis":
-            # Winters: 期待PaCO2 = 1.5 × HCO3 + 8 ± 2
+            # Winters: Expected PaCO2 = 1.5 x HCO3 + 8 +/- 2
             expected = 1.5 * hco3 + 8
             result["expected_compensation"] = (
-                f"PaCO2 = {expected-2:.1f}-{expected+2:.1f} mmHg (Winters式)"
+                f"PaCO2 = {expected-2:.1f}-{expected+2:.1f} mmHg (Winters formula)"
             )
             if pco2 < expected - 2:
-                comp_status = "respiratory_alkalosis_concomitant (代償を超える低下)"
+                comp_status = "respiratory_alkalosis_concomitant (decrease beyond expected compensation)"
             elif pco2 > expected + 2:
-                comp_status = "respiratory_acidosis_concomitant (代償不十分)"
+                comp_status = "respiratory_acidosis_concomitant (inadequate compensation)"
             else:
                 comp_status = "appropriate_compensation"
         elif primary == "metabolic_alkalosis":
-            # 期待PaCO2 = HCO3 + 15 (近似)
+            # Expected PaCO2 = HCO3 + 15 (approximation)
             expected = hco3 + 15
             result["expected_compensation"] = (
-                f"PaCO2 ≈ {expected:.1f} mmHg (簡易式)"
+                f"PaCO2 approx {expected:.1f} mmHg (simplified formula)"
             )
             if pco2 < expected - 5:
                 comp_status = "respiratory_alkalosis_concomitant"
@@ -969,30 +976,30 @@ class Tools:
             else:
                 comp_status = "appropriate_compensation"
         elif primary == "respiratory_acidosis":
-            # 急性: ΔHCO3 ≈ ΔPaCO2 × 0.1, 慢性: ×0.35
+            # Acute: delta-HCO3 approx delta-PaCO2 x 0.1, Chronic: x 0.35
             delta_pco2 = pco2 - 40
             expected_acute = 24 + delta_pco2 * 0.1
             expected_chronic = 24 + delta_pco2 * 0.35
             result["expected_compensation"] = (
-                f"急性: HCO3≈{expected_acute:.1f}, 慢性: HCO3≈{expected_chronic:.1f}"
+                f"Acute: HCO3 approx {expected_acute:.1f}, Chronic: HCO3 approx {expected_chronic:.1f}"
             )
         elif primary == "respiratory_alkalosis":
             delta_pco2 = 40 - pco2
             expected_acute = 24 - delta_pco2 * 0.2
             expected_chronic = 24 - delta_pco2 * 0.5
             result["expected_compensation"] = (
-                f"急性: HCO3≈{expected_acute:.1f}, 慢性: HCO3≈{expected_chronic:.1f}"
+                f"Acute: HCO3 approx {expected_acute:.1f}, Chronic: HCO3 approx {expected_chronic:.1f}"
             )
 
         if comp_status:
             result["compensation_status"] = comp_status
 
-        # AG計算
+        # AG calculation
         if na is not None and cl is not None:
             ag = na - cl - hco3
             result["anion_gap"] = round(ag, 1)
             if albumin_g_dl is not None:
-                # 補正AG: AG + 2.5 × (4 - albumin)
+                # Corrected AG: AG + 2.5 x (4 - albumin)
                 corrected_ag = ag + 2.5 * (4.0 - albumin_g_dl)
                 result["corrected_anion_gap"] = round(corrected_ag, 1)
                 result["ag_interpretation"] = (
@@ -1004,7 +1011,7 @@ class Tools:
                     "high_anion_gap" if ag > 12 else "normal_anion_gap"
                 )
 
-        # 簡易サマリ
+        # Brief summary
         result["summary"] = f"primary: {primary}"
         if comp_status and comp_status != "appropriate_compensation":
             result["mixed_disorder_suspected"] = True
@@ -1012,7 +1019,7 @@ class Tools:
         return result
 
     # =========================================================================
-    # 腎機能 (追加分)
+    # Renal function (additional)
     # =========================================================================
 
     def calc_egfr_jsn(
@@ -1021,15 +1028,16 @@ class Tools:
         age: int,
         sex: Literal["M", "F"],
     ) -> Dict[str, Any]:
-        """日本人のGFR推算式 (日本腎臓学会 2009) によるeGFRを計算する。
-        国内では本式が広く使用されている。
+        """Calculate eGFR using the Japanese GFR estimation equation
+        (Japanese Society of Nephrology [JSN] 2009).
+        This equation is widely used in Japan.
 
-        :param cr: 血清クレアチニン (酵素法、mg/dL)
-        :param age: 年齢 (歳)
-        :param sex: "M" または "F"
+        :param cr: Serum creatinine (enzymatic method, mg/dL)
+        :param age: Age (years)
+        :param sex: "M" or "F"
         :return: {egfr, formula, ckd_stage, note}
 
-        式: eGFR = 194 × Cr^(-1.094) × age^(-0.287) × (女性なら ×0.739)
+        Formula: eGFR = 194 x Cr^(-1.094) x age^(-0.287) x (0.739 for female)
         """
         egfr = 194 * (cr ** -1.094) * (age ** -0.287)
         if sex == "F":
@@ -1050,12 +1058,12 @@ class Tools:
 
         return {
             "egfr": round(egfr, 1),
-            "unit": "mL/min/1.73m²",
-            "formula": "JSN 2009 (日本人GFR推算式)",
+            "unit": "mL/min/1.73m2",
+            "formula": "JSN 2009 (Japanese GFR estimation equation)",
             "ckd_stage": stage,
             "note": (
-                "酵素法で測定したCrを用いること。Jaffe法のCrは低く出るため不適。"
-                "薬剤投与量調整には本値ではなく Cockcroft-Gault によるCCr (絶対値) を使う。"
+                "Use Cr measured by enzymatic method. Jaffe method Cr reads low and is not suitable. "
+                "For drug dosage adjustment, use CCr (absolute value) from Cockcroft-Gault, not this value."
             ),
         }
 
@@ -1067,23 +1075,23 @@ class Tools:
         age: int,
         na_target: float = 140,
     ) -> Dict[str, Any]:
-        """高Na血症における自由水欠乏量を計算する。
+        """Calculate free water deficit in hypernatremia.
 
-        :param na_measured: 実測Na (mEq/L)
-        :param weight_kg: 体重 (kg)
-        :param sex: "M" または "F"
-        :param age: 年齢 (歳)。65歳以上はTBW比率を下げる。
-        :param na_target: 目標Na (mEq/L)、デフォルト140
+        :param na_measured: Measured Na (mEq/L)
+        :param weight_kg: Body weight (kg)
+        :param sex: "M" or "F"
+        :param age: Age (years). TBW ratio is reduced for age >=65.
+        :param na_target: Target Na (mEq/L), default 140
         :return: {free_water_deficit_L, tbw_L, note}
 
-        式: 自由水欠乏 = TBW × (実測Na/目標Na - 1)
-        TBW比率: 男性0.6, 女性0.5 (高齢者はそれぞれ0.5, 0.45)
+        Formula: Free water deficit = TBW x (measured Na / target Na - 1)
+        TBW ratio: Male 0.6, Female 0.5 (elderly: 0.5 and 0.45 respectively)
         """
         if na_measured <= na_target:
             return {
                 "error": (
-                    f"実測Na ({na_measured}) が目標Na ({na_target}) 以下のため、"
-                    f"自由水欠乏は存在しない。"
+                    f"Measured Na ({na_measured}) is at or below target Na ({na_target}), "
+                    f"so free water deficit does not exist."
                 )
             }
 
@@ -1094,37 +1102,41 @@ class Tools:
 
         tbw = weight_kg * tbw_ratio
         deficit = tbw * (na_measured / na_target - 1)
-        suggested_24h = deficit / 2  # 慢性想定で半量補正提案
+        suggested_24h = deficit / 2  # Half-correction suggestion assuming chronic case
 
         return {
             "free_water_deficit_L": round(deficit, 2),
             "tbw_L": round(tbw, 2),
             "tbw_ratio_used": tbw_ratio,
             "suggested_24h_volume_L": round(suggested_24h, 2),
-            "max_correction_rate": "≤10 mEq/L/24h (慢性) または ≤1 mEq/L/h (急性)",
+            "max_correction_rate": "<=10 mEq/L/24h (chronic) or <=1 mEq/L/h (acute)",
             "note": (
-                "本値は自由水のみの欠乏量。維持輸液量と経口/経管摂取量も別途考慮すること。"
-                "Naの急速補正は脳浮腫・脱髄を起こすため、慢性例では24時間で半量補正を目安。"
-                "輸液製剤の自由水含量に注意 (5%ブドウ糖=100%、1/2生食=50%、生食=0%)。"
+                "This value represents free water deficit only. Maintenance fluid volume and "
+                "oral/enteral intake should be considered separately. "
+                "Rapid Na correction can cause cerebral edema/demyelination; for chronic cases, "
+                "aim for half-correction over 24 hours. "
+                "Note the free water content of IV fluids (5% dextrose=100%, half-normal saline=50%, normal saline=0%)."
             ),
         }
 
     # =========================================================================
-    # コメントスタブ (Phase 1.5以降で実装候補)
+    # Comment stubs (candidates for implementation in Phase 1.5+)
     # =========================================================================
-    # 以下、Phase 1のログを見て頻用されるものから順次実装する。
+    # The following will be implemented in order of frequency based on Phase 1 logs.
     #
-    # def calc_grace_score(...): ACS入院時リスク (急性冠症候群)
-    # def calc_timi_score(type, ...): NSTEMI/STEMI 統合
-    # def calc_pesi(simplified=False, ...): PE 重症度
-    # def calc_bisap(...): 急性膵炎 簡易版
-    # def calc_calvert_carboplatin(target_auc, gfr): Calvert式 (GFR上限125)
-    # def calc_meld_3(...): MELD 3.0 (UNOS 2023〜)
-    # def calc_na_correction_rate(...): Na補正速度の上限警告
+    # def calc_grace_score(...): ACS admission risk (acute coronary syndrome)
+    # def calc_timi_score(type, ...): NSTEMI/STEMI combined
+    # def calc_pesi(simplified=False, ...): PE severity
+    # def calc_bisap(...): Acute pancreatitis simplified version
+    # def calc_calvert_carboplatin(target_auc, gfr): Calvert formula (GFR cap 125)
+    # def calc_meld_3(...): MELD 3.0 (UNOS 2023~)
+    # def calc_na_correction_rate(...): Na correction rate upper limit warning
     #
-    # === TDM (別SKILL扱い) ===
-    # バンコマイシン TDM、アミノグリコシド TDM 等は本tool群ではなく、
-    # 独立SKILL (vancomycin-tdm 等) として Pyodide ワークフローで実装する。
-    # 理由: 計算 → 可視化 → What-if が一連のワークフローで、
-    #       tool の単発呼び出しよりも Pyodide 上で対話的に進めるほうが価値が高い。
-    #       また各施設の薬剤部 TDM 支援サービスとの役割分担も明確にしやすい。
+    # === TDM (separate SKILL) ===
+    # Vancomycin TDM, aminoglycoside TDM, etc. are not part of this tool collection
+    # but will be implemented as independent SKILLs (vancomycin-tdm, etc.) using
+    # Pyodide workflows.
+    # Reason: The calculation -> visualization -> what-if sequence works better as
+    # an interactive workflow on Pyodide than as single tool invocations.
+    # This also makes it easier to delineate roles with each institution's
+    # pharmacy TDM support services.

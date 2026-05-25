@@ -1,234 +1,235 @@
-# LLENS デプロイ運用
+# LLENS Deployment Operations
 
-このドキュメントは **ホスト OS の構成・搬入運用・セキュリティ** を扱う資料。
-モデルや UI の使い方は [README.md](README.md) を参照。
+This document covers **host OS configuration, transport/deployment operations, and security**.
+For model and UI usage, see [README.md](README.md).
 
 ---
 
-## ライフサイクル
+## Lifecycle
 
-LLENS は「院外オンラインで構築 → 院内閉域で運用」を1サイクルとする。再構築時は SSD ワイプから始まる。
+LLENS follows a single cycle of "build off-site online, then operate on-premises in an air-gapped environment." Rebuilds start from an SSD wipe.
 
 ```
-[院外 / オンライン]                     [院内 / 閉域]
+[Off-site / Online]                      [On-premises / Air-gapped]
   ┌─────────────────────────────┐         ┌──────────────┐
-  │ 1. OS インストール          │         │              │
-  │ 2. SSH 設定 (鍵投入)        │  搬入   │              │
-  │ 3. repo clone               │  ───→   │  運用        │
-  │ 4. NVIDIA / Docker / uv     │         │  (更新なし)  │
-  │ 5. .env 作成                │         │              │
-  │ 6. モデル DL                │         │              │
+  │ 1. OS install               │         │              │
+  │ 2. SSH setup (key injection)│  Deploy │              │
+  │ 3. repo clone               │  ───→   │  Operation   │
+  │ 4. NVIDIA / Docker / uv     │         │  (no updates)│
+  │ 5. Create .env              │         │              │
+  │ 6. Model download           │         │              │
   │ 7. preflight apply          │         │              │
   │ 8. docker compose up        │         │              │
   │ 9. preflight audit          │         │              │
   │ 10. preflight scan          │         │              │
   └─────────────────────────────┘         └──────┬───────┘
                                                   │
-                              (寿命 / リフレッシュ)│
+                              (End of life / Refresh)
+                                                  │
                                                   ▼
                                           ┌──────────────┐
-                                          │ SSD ワイプ   │
-                                          │ 院外搬出     │
+                                          │ SSD wipe     │
+                                          │ Transport out│
                                           └──────┬───────┘
                                                   │
-                                          (再構築 = 上記 1 へ)
+                                          (Rebuild = back to step 1)
 ```
 
-**含意**: リポジトリ + `.env` の組み合わせが「サーバを再構成可能な唯一の真実」。スクリプトを介さない手動変更は次サイクルで消える。
+**Implication**: The combination of the repository + `.env` is "the single source of truth that can reconstitute the server." Any manual changes not made through scripts will be lost in the next cycle.
 
 ---
 
-## ホスト構成
+## Host Configuration
 
-### サービス一覧と公開範囲
+### Service List and Exposure Scope
 
-| サービス | ホストポート | bind | 公開範囲 | 認証 |
+| Service | Host Port | bind | Exposure Scope | Auth |
 |---|---|---|---|---|
-| Caddy (リバプロ → OWUI) | :80 | 0.0.0.0 | HINES 全体 | OWUI 側 |
-| SSH (sshd) | :22 | 0.0.0.0 | HINES 全体 | 公開鍵 |
-| SGLang (推論API) | :8000 | 0.0.0.0 | **Docker bridge + Tailnet のみ (UFW で制限)** | なし |
-| Open WebUI | :8080 | 127.0.0.1 | localhost のみ (Caddy 経由) | OWUI 自前 |
-| Docling | :5001 | 127.0.0.1 | localhost のみ (debug 用) | なし |
-| Prometheus | :9090 | 127.0.0.1 | localhost のみ (debug 用) | なし |
-| DCGM Exporter | :9400 | 127.0.0.1 | localhost のみ (debug 用) | なし |
-| Grafana | :9000 | 0.0.0.0 | HINES 全体 | admin/(env) |
+| Caddy (reverse proxy → OWUI) | :80 | 0.0.0.0 | Entire HINES network | OWUI-side |
+| SSH (sshd) | :22 | 0.0.0.0 | Entire HINES network | Public key |
+| SGLang (inference API) | :8000 | 0.0.0.0 | **Docker bridge + Tailnet only (restricted by UFW)** | None |
+| Open WebUI | :8080 | 127.0.0.1 | localhost only (via Caddy) | OWUI built-in |
+| Docling | :5001 | 127.0.0.1 | localhost only (debug use) | None |
+| Prometheus | :9090 | 127.0.0.1 | localhost only (debug use) | None |
+| DCGM Exporter | :9400 | 127.0.0.1 | localhost only (debug use) | None |
+| Grafana | :9000 | 0.0.0.0 | Entire HINES network | admin/(env) |
 
-**設計原則**:
-- 一般ユーザー向け = Caddy (:80) → OWUI のみ
-- 管理者向け = SSH (:22) + Grafana (:9000、認証あり)
-- 内部 API (SGLang, Docling, Prometheus, DCGM) は外から見えない or Tailnet のみ
-- Tailscale は院外フェーズの管理アクセスに使う。閉域後は失効するが UFW ルールは互換 (該当 CGNAT へのトラフィックが消えるだけ)
+**Design Principles**:
+- End users = Caddy (:80) → OWUI only
+- Admins = SSH (:22) + Grafana (:9000, with authentication)
+- Internal APIs (SGLang, Docling, Prometheus, DCGM) are not externally visible or Tailnet-only
+- Tailscale is used for management access during the off-site phase. It expires after entering the air-gapped environment, but UFW rules remain compatible (traffic to the relevant CGNAT range simply ceases)
 
 ### Caddy
 
-`:80` で listen し、OWUI (`127.0.0.1:8080`) へリバプロ。Caddy 自体の設定はホスト側で別管理(リポ外)。閉域では `llens.med.hokudai.ac.jp` の DNS が引けないので、IP 直 (`http://<内部 IP>/`) で利用。
+Listens on `:80` and reverse-proxies to OWUI (`127.0.0.1:8080`). Caddy's own configuration is managed separately on the host (outside this repo). In the air-gapped environment, DNS for `llens.med.hokudai.ac.jp` is not resolvable, so access is via direct IP (`http://<internal IP>/`).
 
 ### Tailscale
 
-院外フェーズの管理アクセスに利用 (CGNAT 帯 `100.64.0.0/10`)。
+Used for management access during the off-site phase (CGNAT range `100.64.0.0/10`).
 
-- ホスト: `100.68.171.99` (Tailscale 割当、Tailnet 内固定)
-- 用途: 管理者が SGLang `:8000` 等に直接触る (デバッグ・eval ループ用)
-- 院内閉域では coord/DERP に届かず失効。UFW ルールはそのままでも無害
+- Host: `100.68.171.99` (Tailscale-assigned, fixed within the Tailnet)
+- Purpose: Admins directly access SGLang `:8000` etc. (for debugging and eval loops)
+- In the on-premises air-gapped environment, it expires as the coordinator/DERP servers become unreachable. UFW rules remain harmless as-is
 
 ### .env
 
-`docker-compose.yml` は `${GRAFANA_ADMIN_PASSWORD:?...}` を要求。`.env` を `.env.example` から作成:
+`docker-compose.yml` requires `${GRAFANA_ADMIN_PASSWORD:?...}`. Create `.env` from `.env.example`:
 
 ```bash
 cp .env.example .env
-# .env を編集して GRAFANA_ADMIN_PASSWORD を設定
+# Edit .env and set GRAFANA_ADMIN_PASSWORD
 ```
 
-`.env` は `.gitignore` 済。再構築時は新 `.env` を毎回作る (前サイクルの値を持ち越したければ別途オフライン保管)。
+`.env` is in `.gitignore`. On each rebuild, a new `.env` is created from scratch (if you want to carry over values from a previous cycle, store them offline separately).
 
 ---
 
-## 構築チェックリスト
+## Build Checklist
 
-院外オンラインで上から順に実行。**SSH ハードニングは preflight が担うので、最初の SSH 設定は手動で鍵を入れるだけでよい**。
+Execute from top to bottom while off-site and online. **SSH hardening is handled by preflight, so the initial SSH setup only requires manually injecting keys**.
 
 ```
-[ ] 1. Ubuntu 24.04 LTS インストール
-[ ] 2. SSH: 鍵を投入、パスワードログインで一度確認 (この後 preflight で鍵限定化)
-[ ] 3. NVIDIA ドライバ + Docker + uv インストール、再起動
-[ ] 4. Tailscale 加入 (院外フェーズの管理アクセス用、必須ではない)
+[ ] 1. Install Ubuntu 24.04 LTS
+[ ] 2. SSH: inject keys, verify with password login once (preflight will enforce key-only auth after this)
+[ ] 3. Install NVIDIA driver + Docker + uv, reboot
+[ ] 4. Join Tailscale (for management access during the off-site phase, not mandatory)
 [ ] 5. git clone <repo> ~/llens
-[ ] 6. cp .env.example .env  →  GRAFANA_ADMIN_PASSWORD を設定
+[ ] 6. cp .env.example .env  →  set GRAFANA_ADMIN_PASSWORD
 [ ] 7. uv sync
 [ ] 8. hf auth login
-[ ] 9. モデル DL (深夜バッチ、~数時間)
-[ ] 10. make preflight-audit       ← 現状把握
-[ ] 11. make preflight-apply       ← ホスト hardening
-[ ] 12. make run-<model> &         ← SGLang 起動
-[ ] 13. docker compose build --pull open-webui   ← OWUI カスタム image をビルド
+[ ] 9. Model download (overnight batch, ~several hours)
+[ ] 10. make preflight-audit       ← assess current state
+[ ] 11. make preflight-apply       ← host hardening
+[ ] 12. make run-<model> &         ← start SGLang
+[ ] 13. docker compose build --pull open-webui   ← build OWUI custom image
 [ ] 14. docker compose up -d
-[ ] 15. ヘルスチェック (README 参照)
-[ ] 16. make preflight-audit       ← 適用後確認
-[ ] 17. 搬入直前の手動停止 (下記「搬入直前チェックリスト」)
-[ ] 18. make preflight-scan        ← シャットダウン直前のフルスキャン
-[ ] 19. shutdown → 院内搬入
+[ ] 15. Health check (see README)
+[ ] 16. make preflight-audit       ← verify post-apply state
+[ ] 17. Manual stop before transport (see "Pre-transport Checklist" below)
+[ ] 18. make preflight-scan        ← full scan just before shutdown
+[ ] 19. shutdown → transport to on-premises
 ```
 
-> 注: OWUI は上流 image に PDF→画像変換用パッケージを焼き込んだ自前 image
-> (`llens/open-webui:vX.Y.Z`) を使う。Dockerfile は `docker/open-webui/`。
-> バージョン上げ時は Dockerfile の FROM タグと docker-compose.yml の image タグを
-> 同期して `docker compose build --pull open-webui` でリビルド。
+> Note: OWUI uses a custom image (`llens/open-webui:vX.Y.Z`) that bakes PDF-to-image
+> conversion packages into the upstream image. The Dockerfile is in `docker/open-webui/`.
+> When upgrading versions, sync the FROM tag in the Dockerfile and the image tag in
+> docker-compose.yml, then rebuild with `docker compose build --pull open-webui`.
 
 ---
 
-## 搬入直前チェックリスト (手動)
+## Pre-transport Checklist (Manual)
 
-preflight-apply で扱わない「構築固有」項目を搬入直前に手動で片付ける。
+Items specific to the build phase that are not handled by preflight-apply; complete these manually just before transport.
 
 ```
-[ ] cloudflared 停止 (オンライン専用、閉域では不要)
+[ ] Stop cloudflared (online-only, not needed in the air-gapped environment)
     sudo systemctl disable --now cloudflared cloudflared-update.timer
 
-[ ] Tailscale 停止 (オンライン専用、閉域では coord に届かず無効化)
+[ ] Stop Tailscale (online-only, becomes inactive in the air-gapped environment as the coordinator is unreachable)
     sudo tailscale down
     sudo systemctl disable --now tailscaled
 ```
 
-### 時刻同期 (TODO)
+### Time Synchronization (TODO)
 
-院内 NTP サーバの情報が未確定。判明次第以下を設定:
+The on-premises NTP server information is not yet confirmed. Configure the following once determined:
 
 ```
-[ ] 稼働中の時刻同期サービスを確認
+[ ] Check which time synchronization service is running
     systemctl status systemd-timesyncd ntpsec chronyd 2>/dev/null
 
-[ ] 院内 NTP に切替 (systemd-timesyncd を使う場合)
-    sudo sed -i 's|^#\?NTP=.*|NTP=<院内 NTP サーバ>|' /etc/systemd/timesyncd.conf
+[ ] Switch to on-premises NTP (if using systemd-timesyncd)
+    sudo sed -i 's|^#\?NTP=.*|NTP=<on-premises NTP server>|' /etc/systemd/timesyncd.conf
     sudo systemctl enable --now systemd-timesyncd
-    sudo systemctl disable --now ntpsec  # 他の同期サービスは止める
+    sudo systemctl disable --now ntpsec  # Stop other sync services
 ```
 
 ---
 
-## preflight 運用
+## preflight Operations
 
-すべて `make preflight-*` から呼び出す。ログは `logs/` に自動出力 (gitignore、SUDO_USER 所有)。
+All invoked via `make preflight-*`. Logs are automatically written to `logs/` (gitignored, owned by SUDO_USER).
 
-| コマンド | 役割 | 副作用 |
+| Command | Role | Side Effects |
 |---|---|---|
-| `make preflight-audit` | 現状確認 (SSH/timer/cron/ポート/構成項目の状態) | なし (read-only) |
-| `make preflight-apply` | 構成適用 + 不要設定の omit (UFW/SSH/rpcbind/slurm 等) | あり、すべてべき等 |
-| `make preflight-scan` | ClamAV 全体スキャン | パターン DB 更新のみ |
+| `make preflight-audit` | Status check (SSH/timer/cron/ports/configuration item states) | None (read-only) |
+| `make preflight-apply` | Apply configuration + omit unnecessary settings (UFW/SSH/rpcbind/slurm, etc.) | Yes, all idempotent |
+| `make preflight-scan` | ClamAV full scan | Pattern DB update only |
 
-### preflight-apply が触る項目
+### Items Managed by preflight-apply
 
-**A. アプリ構成 (恒久設定として必要)**
+**A. Application Configuration (required as persistent settings)**
 
-| ID | 内容 |
+| ID | Description |
 |---|---|
-| A1 | 時刻同期 (確認のみ、変更は手動) |
-| A2 | kernel / nvidia パッケージの apt-mark hold |
-| A3 | nvidia-persistenced 有効化 |
-| A4 | UFW 設定 (default deny incoming + 必要ポート許可) |
-| A5 | SSH ハードニング (`/etc/ssh/sshd_config.d/99-llens.conf`) |
+| A1 | Time synchronization (check only, changes are manual) |
+| A2 | apt-mark hold for kernel / nvidia packages |
+| A3 | Enable nvidia-persistenced |
+| A4 | UFW configuration (default deny incoming + allow required ports) |
+| A5 | SSH hardening (`/etc/ssh/sshd_config.d/99-llens.conf`) |
 
-**B. 不要設定の omit (通信抑止 / 攻撃面削減)**
+**B. Omit Unnecessary Settings (suppress communications / reduce attack surface)**
 
-| ID | 内容 |
+| ID | Description |
 |---|---|
-| B1 | OS 自動更新 (unattended-upgrades, apt-daily) |
-| B2 | Snap 自動更新の hold |
-| B3 | テレメトリ系の削除 (popularity-contest, apport, whoopsie) |
+| B1 | OS automatic updates (unattended-upgrades, apt-daily) |
+| B2 | Hold Snap automatic updates |
+| B3 | Remove telemetry packages (popularity-contest, apport, whoopsie) |
 | B4 | motd-news |
-| B5 | 不要・自動更新サービスの停止 (まとめ disable、存在しなければ skip)<br>clamav-freshclam, ua-timer, esm-cache, apt-news, rpcbind, slurm{ctld,d}, cups, cups-browsed, postfix, nfs-server, nfs-kernel-server, rpc-statd |
+| B5 | Stop unnecessary / auto-update services (batch disable, skip if not present)<br>clamav-freshclam, ua-timer, esm-cache, apt-news, rpcbind, slurm{ctld,d}, cups, cups-browsed, postfix, nfs-server, nfs-kernel-server, rpc-statd |
 
-### UFW ルール (A4 で設定)
+### UFW Rules (configured in A4)
 
 ```
 default deny incoming
 default allow outgoing
-allow 22/tcp                                  # SSH (HINES 全体)
-allow 80/tcp                                  # Caddy → OWUI (HINES 全体)
-allow 9000/tcp                                # Grafana (HINES 全体)
+allow 22/tcp                                  # SSH (entire HINES network)
+allow 80/tcp                                  # Caddy → OWUI (entire HINES network)
+allow 9000/tcp                                # Grafana (entire HINES network)
 allow from 172.16.0.0/12 to any port 8000     # Docker bridge → SGLang
 allow from 100.64.0.0/10 to any port 8000     # Tailnet → SGLang
 ```
 
 ---
 
-## 緊急対応
+## Emergency Response
 
-### 北大からの脆弱性検査で CRITICAL 通知が来たとき
+### When a CRITICAL Vulnerability Scan Notification Arrives from Hokkaido University
 
-1. メール本文の指摘内容を確認
-2. 該当サービスを停止 (`docker compose stop <service>` 等)
-3. 修正 (パスワード変更 / 設定見直し / ポート閉鎖)
-4. `make preflight-audit` で差分確認
-5. 学術情報部 (vulnerability@oicte.hokudai.ac.jp) に対応報告 + 再検査依頼
+1. Review the details described in the email
+2. Stop the affected service (`docker compose stop <service>`, etc.)
+3. Apply the fix (password change / configuration review / port closure)
+4. Verify the diff with `make preflight-audit`
+5. Report the response to the IT department (vulnerability@oicte.hokudai.ac.jp) and request a re-scan
 
-### Grafana admin/admin 疑い
+### Suspected Grafana admin/admin Default Credentials
 
 ```bash
 curl -s -o /dev/null -w "%{http_code}\n" -u admin:admin http://localhost:9000/api/admin/users
-# 401 = 安全 (パスワード変更済み)
-# 200 = 即対応 (UI から変更 or .env 更新 + docker compose up -d --force-recreate grafana)
+# 401 = safe (password has been changed)
+# 200 = act immediately (change via UI, or update .env + docker compose up -d --force-recreate grafana)
 ```
 
-### SGLang が tailnet 外から触れる疑い
+### Suspected SGLang Accessible Outside Tailnet
 
 ```bash
 sudo ufw status verbose | grep 8000
-# 上記 UFW ルールが無ければ make preflight-apply を再実行
+# If the above UFW rules are missing, re-run make preflight-apply
 ```
 
-### 認証情報漏洩疑い
+### Suspected Credential Leak
 
-- `.env` の `GRAFANA_ADMIN_PASSWORD` を変更
+- Change `GRAFANA_ADMIN_PASSWORD` in `.env`
 - `docker compose down grafana && docker volume rm llens_grafana_data && docker compose up -d grafana`
-  - **ダッシュボード設定は monitoring/grafana/provisioning/ から自動復元される**
-  - ユーザー設定 (個人ダッシュボード等) は失われる
-- SSH 公開鍵を棚卸し: `make preflight-audit` の A0 セクションで `authorized_keys` を確認
+  - **Dashboard configuration is automatically restored from monitoring/grafana/provisioning/**
+  - User settings (personal dashboards, etc.) will be lost
+- Audit SSH public keys: check `authorized_keys` in the A0 section of `make preflight-audit`
 
 ---
 
-## 関連ドキュメント
+## Related Documents
 
-- [README.md](README.md) — モデル/UI の使い方、ヘルスチェック、ユーザー退避
-- [docs/migration.md](docs/migration.md) — 専用ユーザー `llens` への将来移行案 (現在は enda 運用)
-- [docs/evals.md](docs/evals.md) — eval phase の進捗メモ
+- [README.md](README.md) — Model/UI usage, health checks, user data evacuation
+- [docs/migration.md](docs/migration.md) — Future migration plan to dedicated user `llens` (currently running as enda)
+- [docs/evals.md](docs/evals.md) — Eval phase progress notes

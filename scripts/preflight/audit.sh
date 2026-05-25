@@ -1,21 +1,21 @@
 #!/bin/bash
 #==============================================================================
 # preflight-audit.sh
-#   搬入前作業の read-only な現状確認スクリプト
-#   いつ何度実行しても安全 (副作用なし)
+#   Read-only status check script for pre-deployment tasks
+#   Safe to run any number of times (no side effects)
 #
-# 使い方:
+# Usage:
 #   make preflight-audit
-#   または: sudo bash scripts/preflight-audit.sh
+#   or: sudo bash scripts/preflight-audit.sh
 #
-# 出力:
+# Output:
 #   <repo>/logs/preflight-audit_<TS>.log
 #==============================================================================
 
 set -uo pipefail
 
 if [ "$EUID" -ne 0 ]; then
-    echo "ERROR: root権限で実行してください (make preflight-audit を推奨)"
+    echo "ERROR: Must be run as root (make preflight-audit recommended)"
     exit 1
 fi
 
@@ -48,16 +48,16 @@ echo " host=$(hostname)   invoker=${SUDO_USER:-root}"
 echo "=============================================================="
 
 #------------------------------------------------------------------------------
-# [A0] SSH 設定確認 (最重要 — 想定外の鍵が混じってないか目視必須)
+# [A0] SSH configuration check (critical — visually verify no unexpected keys)
 #------------------------------------------------------------------------------
-section "[A0] sshd 実効設定"
+section "[A0] sshd effective configuration"
 sshd -T 2>/dev/null | grep -E "^(port|listenaddress|permitrootlogin|passwordauthentication|pubkeyauthentication|allowusers|allowgroups) " \
-    || echo "  (sshd -T 失敗)"
+    || echo "  (sshd -T failed)"
 
-section "[A0] sshd LISTEN ポート"
-ss -tlnp 2>/dev/null | grep sshd || echo "  (sshd LISTEN なし — 要確認)"
+section "[A0] sshd LISTEN ports"
+ss -tlnp 2>/dev/null | grep sshd || echo "  (sshd not LISTEN — needs investigation)"
 
-section "[A0] authorized_keys (フィンガープリント)"
+section "[A0] authorized_keys (fingerprints)"
 for d in /root /home/*; do
     ak="$d/.ssh/authorized_keys"
     if [ -f "$ak" ]; then
@@ -66,78 +66,78 @@ for d in /root /home/*; do
     fi
 done
 
-section "[A0] 直近ログイン (last -n 10)"
+section "[A0] Recent logins (last -n 10)"
 last -n 10 -a 2>/dev/null | head -12
 
-section "[A0] SSH 失敗ログ (直近7日)"
+section "[A0] SSH failure log (last 7 days)"
 journalctl -u ssh --since "7 days ago" 2>/dev/null | grep -iE "fail|invalid" | tail -5 \
-    || echo "  (記録なし)"
+    || echo "  (no records)"
 
 #------------------------------------------------------------------------------
-# 全 LISTEN ポート (外から触れるサービスの棚卸し)
+# All LISTEN ports (inventory of externally accessible services)
 #------------------------------------------------------------------------------
-section "全 LISTEN ポート (TCP)"
+section "All LISTEN ports (TCP)"
 ss -tlnp 2>/dev/null | awk 'NR==1 || $4 !~ /^127\.0\.0\.1:/' \
-    || echo "  (ss 失敗)"
+    || echo "  (ss failed)"
 
 #------------------------------------------------------------------------------
-# システム状態スナップショット
+# System state snapshot
 #------------------------------------------------------------------------------
-section "有効な systemd timer"
+section "Active systemd timers"
 systemctl list-timers --all --no-pager
 
-section "cron 設定"
+section "Cron configuration"
 ls -la /etc/cron.*/ 2>/dev/null || true
 cat /etc/crontab 2>/dev/null || true
 for u in $(cut -f1 -d: /etc/passwd); do
     ct=$(crontab -u "$u" -l 2>/dev/null) && echo "--- user: $u ---" && echo "$ct"
 done
 
-section "現在の外向き接続"
+section "Current outbound connections"
 ss -tupn state established 2>/dev/null || true
 
 #------------------------------------------------------------------------------
-# A) アプリ構成の現状
+# A) Application configuration status
 #------------------------------------------------------------------------------
-section "[A1] 時刻同期"
+section "[A1] Time synchronization"
 echo -n "  systemd-timesyncd: "
 systemctl is-active systemd-timesyncd 2>/dev/null || true
 if [ -f /etc/systemd/timesyncd.conf ]; then
-    grep -E "^[^#]*NTP=" /etc/systemd/timesyncd.conf || echo "  NTP=未設定 (デフォルト ntp.ubuntu.com 等)"
+    grep -E "^[^#]*NTP=" /etc/systemd/timesyncd.conf || echo "  NTP= not set (default ntp.ubuntu.com etc.)"
 fi
 
-section "[A2] kernel / nvidia パッケージの hold 状況"
-apt-mark showhold 2>/dev/null | grep -E "linux-|nvidia-" || echo "  (該当 hold なし)"
+section "[A2] kernel / nvidia package hold status"
+apt-mark showhold 2>/dev/null | grep -E "linux-|nvidia-" || echo "  (no matching holds)"
 
 section "[A3] nvidia-persistenced"
-# systemctl is-enabled/is-active は disabled/inactive 等で stdout に状態を出しつつ
-# 非0 で終わるため、$(... || echo X) すると state="disabled\nX" になって行が崩れる。
-# stdout を捕まえて空のときだけ placeholder を入れる。
+# systemctl is-enabled/is-active outputs the state to stdout while exiting
+# non-zero for disabled/inactive, so $(... || echo X) would produce "disabled\nX"
+# and break the line. Capture stdout and use a placeholder only when empty.
 state=$(systemctl is-enabled nvidia-persistenced 2>/dev/null); [ -z "$state" ] && state=not-installed
 active=$(systemctl is-active nvidia-persistenced 2>/dev/null); [ -z "$active" ] && active=n/a
 echo "  enabled: $state"
 echo "  active:  $active"
 
-section "[A4] UFW 状態"
+section "[A4] UFW status"
 if command -v ufw >/dev/null 2>&1; then
-    ufw status verbose 2>/dev/null || echo "  (ufw status 失敗)"
+    ufw status verbose 2>/dev/null || echo "  (ufw status failed)"
 else
-    echo "  ufw 未インストール"
+    echo "  ufw not installed"
 fi
 
-section "[A5] SSH ハードニング drop-in"
+section "[A5] SSH hardening drop-in"
 SSHD_CONF=/etc/ssh/sshd_config.d/99-llens.conf
 if [ -f "$SSHD_CONF" ]; then
     echo "[$SSHD_CONF]"
     cat "$SSHD_CONF"
 else
-    echo "  $SSHD_CONF なし — preflight-apply 未実行?"
+    echo "  $SSHD_CONF not found — preflight-apply not yet run?"
 fi
 
 #------------------------------------------------------------------------------
-# B) 余計な設定の現状
+# B) Unnecessary settings status
 #------------------------------------------------------------------------------
-section "[B1] OS 自動更新"
+section "[B1] OS auto-updates"
 for unit in unattended-upgrades.service apt-daily.timer apt-daily-upgrade.timer; do
     state=$(systemctl is-enabled "$unit" 2>/dev/null || true)
     echo "  $unit: ${state:-not-installed}"
@@ -147,10 +147,10 @@ section "[B2] Snap"
 if command -v snap >/dev/null 2>&1; then
     snap refresh --time 2>/dev/null | grep -iE "hold|next|last" || true
 else
-    echo "  snap 未インストール"
+    echo "  snap not installed"
 fi
 
-section "[B3] テレメトリ系インストール状況"
+section "[B3] Telemetry packages install status"
 for pkg in popularity-contest apport whoopsie; do
     if dpkg -l "$pkg" 2>/dev/null | grep -q "^ii"; then
         echo "  $pkg: installed"
@@ -161,36 +161,36 @@ done
 
 section "[B4] motd-news"
 if [ -f /etc/default/motd-news ]; then
-    grep -E "^ENABLED=" /etc/default/motd-news || echo "  ENABLED= 未設定"
+    grep -E "^ENABLED=" /etc/default/motd-news || echo "  ENABLED= not set"
 else
-    echo "  /etc/default/motd-news なし"
+    echo "  /etc/default/motd-news not found"
 fi
 
-section "[B5] 不要・自動更新サービスの状態"
+section "[B5] Unnecessary / auto-update services status"
 while read -r unit description; do
     [ -z "$unit" ] && continue
     state=$(systemctl is-enabled "$unit" 2>/dev/null)
     [ -z "$state" ] && state=not-installed
     printf "  %-32s %-12s  %s\n" "$unit" "$state" "$description"
 done <<'EOF'
-clamav-freshclam.service        ClamAV 自動パターン更新
-ua-timer.timer                  Ubuntu Pro / ESM 定期チェック
-esm-cache.service               Ubuntu Pro / ESM キャッシュ
-apt-news.service                APT ニュース
-rpcbind.service                 RPC ポートマッパー
-rpcbind.socket                  RPC ポートマッパー
+clamav-freshclam.service        ClamAV auto pattern update
+ua-timer.timer                  Ubuntu Pro / ESM periodic check
+esm-cache.service               Ubuntu Pro / ESM cache
+apt-news.service                APT news
+rpcbind.service                 RPC portmapper
+rpcbind.socket                  RPC portmapper
 slurmctld.service               Slurm (HGX vendor pre-install)
 slurmd.service                  Slurm (HGX vendor pre-install)
-cups.service                    CUPS プリンタサーバ
-cups-browsed.service            CUPS ブラウザ
+cups.service                    CUPS print server
+cups-browsed.service            CUPS browser
 postfix.service                 Postfix MTA
-nfs-server.service              NFS サーバ
-nfs-kernel-server.service       NFS サーバ (旧名)
+nfs-server.service              NFS server
+nfs-kernel-server.service       NFS server (legacy name)
 rpc-statd.service               NFS lock daemon
 EOF
 
 echo ""
 echo "=============================================================="
-echo " 完了"
-echo " ログ: $LOGFILE"
+echo " Done"
+echo " Log: $LOGFILE"
 echo "=============================================================="

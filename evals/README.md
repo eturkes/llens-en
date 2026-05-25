@@ -1,13 +1,13 @@
-# evals — 院内デプロイ候補モデルの日本語性能評価
+# evals — Japanese Language Performance Evaluation of On-Premises Deployment Candidate Models
 
-フロンティアOSS LLM(GLM-5.1 / DeepSeek V3.2 / Kimi K2.6)の日本語+医療性能を、
-公開リーダーボード(IgakuQA119, JMED-LLM, llm-jp-eval系)と同形式で計測。
+Measuring Japanese + medical performance of frontier OSS LLMs (GLM-5.1 / DeepSeek V3.2 / Kimi K2.6)
+in the same format as public leaderboards (IgakuQA119, JMED-LLM, llm-jp-eval family).
 
-- 評価仕様の詳細(ベンチ規模、採点ルール、ランナー仕様): [`SPEC.md`](./SPEC.md)
+- Evaluation specification details (benchmark scale, scoring rules, runner specs): [`SPEC.md`](./SPEC.md)
 
-## 結果サマリ
+## Results Summary
 
-10タスク (llm-jp-eval-subset 4 + 国試 3 + JMED-LLM 3):
+10 tasks (llm-jp-eval-subset 4 + national exam 3 + JMED-LLM 3):
 
 | Entry | llm-jp-eval (4) | igakuqa | igakuqa119 | jmle2026 | JMED-LLM (3) |
 |---|---|---|---|---|---|
@@ -15,12 +15,12 @@
 | GLM-5.1 | ✓ (on+off) | ✓ (on+off) | ✓ (on+off, blind) | ✓ (on+off, blind) | ✓ (on+off) |
 | DeepSeek V3.2 | ✓ (on+off) | ✓ (on+off) | ✓ (on+off, blind) | ✓ (on+off, blind) | ✓ (on+off) |
 
-- 3モデル × 2モード = 6 phase 全揃い ✓
-- DeepSeek V3.2 のみ default が think_off のためハーネス側で `chat_template_kwargs.thinking=true` を明示送信
+- 3 models x 2 modes = all 6 phases complete ✓
+- DeepSeek V3.2 defaults to think_off, so the harness explicitly sends `chat_template_kwargs.thinking=true`
 
-### JMLE2026 (第120回医師国家試験、2026/2 実施)
+### JMLE2026 (120th Japanese National Medical Licensing Examination, administered Feb 2026)
 
-公式LB の 4列形式(Overall + Text-only)。第120回は学習データに含まれない最新国試。LB上位とQwen3.5系を抜粋:
+Official leaderboard 4-column format (Overall + Text-only). The 120th exam is the latest national exam not included in training data. Top LB entries and Qwen3.5 family excerpted:
 
 | Entry | Overall Score | Overall Acc. | Text-only Score | Text-only Acc. |
 |---|---|---|---|---|
@@ -28,23 +28,23 @@
 | Gemini 3.1 Pro Preview | 493/500 (98.60%) | 393/400 (98.25%) | 378/382 (98.95%) | 298/302 (98.68%) |
 | Claude Sonnet 4.6 | 489/500 (97.80%) | 391/400 (97.75%) | 378/382 (98.95%) | 298/302 (98.68%) |
 | GPT-5.2 | 486/500 (97.20%) | 386/400 (96.50%) | 376/382 (98.43%) | 296/302 (98.01%) |
-| **GLM-5.1 (本検証 blind)** | **481/500 (96.20%)** | **383/400 (95.75%)** | **370/382 (96.86%)** | **292/302 (96.69%)** |
+| **GLM-5.1 (this evaluation, blind)** | **481/500 (96.20%)** | **383/400 (95.75%)** | **370/382 (96.86%)** | **292/302 (96.69%)** |
 | Qwen3.5-397B-A17B | 480/500 (96.00%) | 382/400 (95.50%) | 370/382 (96.86%) | 292/302 (96.69%) |
-| **Kimi K2.6 (本検証 vision)** | **480/500 (96.00%)** | **384/400 (96.00%)** | **369/382 (96.60%)** | **291/302 (96.36%)** |
+| **Kimi K2.6 (this evaluation, vision)** | **480/500 (96.00%)** | **384/400 (96.00%)** | **369/382 (96.60%)** | **291/302 (96.36%)** |
 | Qwen3.5-35B-A3B | 480/500 (96.00%) | 380/400 (95.00%) | 370/382 (96.86%) | 290/302 (96.03%) |
 | Qwen3.5-122B-A10B | 479/500 (95.80%) | 381/400 (95.25%) | 367/382 (96.07%) | 289/302 (95.70%) |
-| **DeepSeek V3.2 (本検証 think_on blind)** | **475/500 (95.00%)** | **383/400 (95.75%)** | **370/382 (96.86%)** | **294/302 (97.35%)** |
+| **DeepSeek V3.2 (this evaluation, think_on blind)** | **475/500 (95.00%)** | **383/400 (95.75%)** | **370/382 (96.86%)** | **294/302 (97.35%)** |
 | GPT-OSS-Swallow-120B-RL-v0.1 | 473/500 (94.60%) | 379/400 (94.75%) | 365/382 (95.55%) | 289/302 (95.70%) |
-| **Kimi K2.6 (本検証 think_off vision、参考)** | **472/500 (94.40%)** | **374/400 (93.50%)** | **362/382 (94.76%)** | **284/302 (94.04%)** |
+| **Kimi K2.6 (this evaluation, think_off vision, reference)** | **472/500 (94.40%)** | **374/400 (93.50%)** | **362/382 (94.76%)** | **284/302 (94.04%)** |
 | gpt-oss-120b (high) | 468/500 (93.60%) | 374/400 (93.50%) | 362/382 (94.76%) | 286/302 (94.70%) |
-| DeepSeek V3.2 (本検証 think_off blind、参考) | 458/500 (91.60%) | 364/400 (91.00%) | 358/382 (93.72%) | 280/302 (92.72%) |
-| GLM-5.1 (本検証 think_off blind、参考) | 456/500 (91.20%) | 362/400 (90.50%) | 349/382 (91.36%) | 273/302 (90.40%) |
+| DeepSeek V3.2 (this evaluation, think_off blind, reference) | 458/500 (91.60%) | 364/400 (91.00%) | 358/382 (93.72%) | 280/302 (92.72%) |
+| GLM-5.1 (this evaluation, think_off blind, reference) | 456/500 (91.20%) | 362/400 (90.50%) | 349/382 (91.36%) | 273/302 (90.40%) |
 
-出典: [naoto-iwase/JMLE2026-Bench](https://github.com/naoto-iwase/JMLE2026-Bench) leaderboard (本検証行除く)
+Source: [naoto-iwase/JMLE2026-Bench](https://github.com/naoto-iwase/JMLE2026-Bench) leaderboard (excluding rows from this evaluation)
 
-**内訳** (本検証、model行 × カテゴリ列):
+**Breakdown** (this evaluation, model rows x category columns):
 
-| Entry | 必修 (B+E)<br>200点 / 合否160 | 一般+臨床 (A+C+D+F)<br>300点 / 合否224 | 必修 Text-only<br>168点 | 一般+臨床 Text-only<br>214点 |
+| Entry | Compulsory (B+E)<br>200 pts / pass 160 | General+Clinical (A+C+D+F)<br>300 pts / pass 224 | Compulsory Text-only<br>168 pts | General+Clinical Text-only<br>214 pts |
 |---|---:|---:|---:|---:|
 | **Kimi K2.6 (think_on, vision)** | 191/200 (95.50%) | 289/300 (96.33%) | 163/168 (97.02%) | 206/214 (96.26%) |
 | **Kimi K2.6 (think_off, vision)** | 193/200 (96.50%) | 279/300 (93.00%) | 163/168 (97.02%) | 199/214 (92.99%) |
@@ -53,9 +53,9 @@
 | **V3.2 (think_on, blind)** | 188/200 (94.00%) | 287/300 (95.67%) | 162/168 (96.43%) | 208/214 (97.20%) |
 | **V3.2 (think_off, blind)** | 186/200 (93.00%) | 272/300 (90.67%) | 162/168 (96.43%) | 196/214 (91.59%) |
 
-ブロック別正答率 (本検証):
+Block-level accuracy (this evaluation):
 
-| Entry | 120A 一般 | 120B 必修 | 120C 一般 | 120D 一般 | 120E 必修 | 120F 一般 |
+| Entry | 120A General | 120B Compulsory | 120C General | 120D General | 120E Compulsory | 120F General |
 |---|---:|---:|---:|---:|---:|---:|
 | **Kimi K2.6 (think_on, vision)** | 97.3% | 96.0% | 93.3% | **100.0%** | 94.0% | 94.7% |
 | **Kimi K2.6 (think_off, vision)** | 96.0% | 92.0% | 89.3% | 97.3% | 98.0% | 89.3% |
@@ -64,39 +64,39 @@
 | **V3.2 (think_on, blind)** | 96.0% | 94.0% | 90.7% | **100.0%** | 98.0% | 96.0% |
 | **V3.2 (think_off, blind)** | 90.7% | 90.0% | 88.0% | 92.0% | 94.0% | 92.0% |
 
-**観察**:
-- **GLM-5.1 (blind) Overall 481/500 (96.20%) で Kimi K2.6 (vision) 480/500 を +1 で上回る** — LB 上 #5 (GPT-5.2 直下、Qwen3.5-397B-A17B 並び)
-- **DeepSeek V3.2 think_on 475/500 (95.00%)** で Kimi/GLM 直下、Qwen3.5-122B-A10B (95.80%) 並び。本検証3モデルとも合否ライン通過
-- GLM-5.1 必修 195/200 (97.50%) と Kimi K2.6 191/200 (95.50%) で **必修で +4点** が GLM 優位の主因
-- 画像問題 acc (blind モデル): GLM-5.1 92.9% (91/98)、V3.2 think_on も同様に9割超 → **テキスト文脈で十分解ける問題が多い** (大半が患者背景・症状の文章記述で、画像は補助的な役割)
-- V3.2 think_on vs think_off: Overall +17点 (458→475)、特に一般+臨床で +15点 (272→287) — thinking が長文症例で効く
-- frontier クラウド勢 (Claude/Gemini/GPT-5) には **Overall で 5-13点差**、Text-only に絞ってもギャップ縮まらず
+**Observations**:
+- **GLM-5.1 (blind) Overall 481/500 (96.20%) exceeds Kimi K2.6 (vision) 480/500 by +1** -- LB rank #5 (just below GPT-5.2, on par with Qwen3.5-397B-A17B)
+- **DeepSeek V3.2 think_on 475/500 (95.00%)** just below Kimi/GLM, on par with Qwen3.5-122B-A10B (95.80%). All 3 models in this evaluation pass the pass/fail threshold
+- GLM-5.1 compulsory 195/200 (97.50%) vs Kimi K2.6 191/200 (95.50%) -- **+4 points in compulsory** is the main driver of GLM's advantage
+- Image-bearing question accuracy (blind models): GLM-5.1 92.9% (91/98), V3.2 think_on also over 90% -- **many questions can be solved from text context alone** (most include patient background/symptom narrative text, with images playing a supplementary role)
+- V3.2 think_on vs think_off: Overall +17 points (458->475), especially +15 points in general+clinical (272->287) -- thinking helps with long clinical case questions
+- Frontier cloud models (Claude/Gemini/GPT-5) are **5-13 points ahead in Overall**, and the gap does not shrink even when limited to Text-only
 
-### IgakuQA119 (第119回医師国家試験)
+### IgakuQA119 (119th Japanese National Medical Licensing Examination)
 
-公式LB の 4列形式(Overall + No-Img)。プロンプトは `naoto-iwase/IgakuQA119` `src/llm_solver.py` 準拠 (公開LB直接比較可)。Llama 系省略、国産は参考:
+Official leaderboard 4-column format (Overall + No-Img). Prompt follows `naoto-iwase/IgakuQA119` `src/llm_solver.py` format (directly comparable with published LB). Llama family omitted; domestic models included for reference:
 
 | Entry | Overall Score | Overall Acc. | No-Img Score | No-Img Acc. |
 |---|---|---|---|---|
 | Gemini-2.5-Pro | 485/500 (97.00%) | 389/400 (97.25%) | 372/383 (97.13%) | 290/297 (97.64%) |
 | OpenAI-o3 | 482/500 (96.40%) | 384/400 (96.00%) | 370/383 (96.61%) | 286/297 (96.30%) |
 | Claude-Sonnet-4 | 471/500 (94.20%) | 375/400 (93.75%) | 363/383 (94.78%) | 281/297 (94.61%) |
-| **GLM-5.1 (本検証 think_on blind)** | **469/500 (93.80%)** | **379/400 (94.75%)** | **361/383 (94.26%)** | **285/297 (95.96%)** |
-| **DeepSeek V3.2 (本検証 think_on blind)** | **469/500 (93.80%)** | **377/400 (94.25%)** | **363/383 (94.78%)** | **285/297 (95.96%)** |
-| **Kimi K2.6 (本検証 vision)** | **465/500 (93.00%)** | **375/400 (93.75%)** | **357/383 (93.21%)** | **281/297 (94.61%)** |
+| **GLM-5.1 (this evaluation, think_on blind)** | **469/500 (93.80%)** | **379/400 (94.75%)** | **361/383 (94.26%)** | **285/297 (95.96%)** |
+| **DeepSeek V3.2 (this evaluation, think_on blind)** | **469/500 (93.80%)** | **377/400 (94.25%)** | **363/383 (94.78%)** | **285/297 (95.96%)** |
+| **Kimi K2.6 (this evaluation, vision)** | **465/500 (93.00%)** | **375/400 (93.75%)** | **357/383 (93.21%)** | **281/297 (94.61%)** |
 | DeepSeek-R1-0528 | 461/500 (92.20%) | 367/400 (91.75%) | 364/383 (95.04%) | 282/297 (94.95%) |
 | DeepSeek-R1 | 448/500 (89.60%) | 356/400 (89.00%) | 350/383 (91.38%) | 270/297 (90.91%) |
-| Kimi K2.6 (本検証 think_off vision、参考) | 444/500 (88.80%) | 358/400 (89.50%) | 339/383 (88.51%) | 267/297 (89.90%) |
-| GLM-5.1 (本検証 think_off blind、参考) | 433/500 (86.60%) | 353/400 (88.25%) | 336/383 (87.73%) | 268/297 (90.24%) |
-| DeepSeek V3.2 (本検証 think_off blind、参考) | 431/500 (86.20%) | 353/400 (88.25%) | 332/383 (86.68%) | 266/297 (89.56%) |
+| Kimi K2.6 (this evaluation, think_off vision, reference) | 444/500 (88.80%) | 358/400 (89.50%) | 339/383 (88.51%) | 267/297 (89.90%) |
+| GLM-5.1 (this evaluation, think_off blind, reference) | 433/500 (86.60%) | 353/400 (88.25%) | 336/383 (87.73%) | 268/297 (90.24%) |
+| DeepSeek V3.2 (this evaluation, think_off blind, reference) | 431/500 (86.20%) | 353/400 (88.25%) | 332/383 (86.68%) | 266/297 (89.56%) |
 | GPT-4o-mini | 345/500 (69.00%) | 279/400 (69.75%) | 269/383 (70.23%) | 215/297 (72.39%) |
-| (参考) Preferred-MedLLM-Qwen-72B (国産医療FT) | 332/500 (66.40%) | 272/400 (68.00%) | 261/383 (68.15%) | 209/297 (70.37%) |
+| (reference) Preferred-MedLLM-Qwen-72B (domestic medical fine-tuned) | 332/500 (66.40%) | 272/400 (68.00%) | 261/383 (68.15%) | 209/297 (70.37%) |
 
-出典: [naoto-iwase/IgakuQA119](https://github.com/naoto-iwase/IgakuQA119) leaderboard (本検証行除く)
+Source: [naoto-iwase/IgakuQA119](https://github.com/naoto-iwase/IgakuQA119) leaderboard (excluding rows from this evaluation)
 
-**内訳** (本検証):
+**Breakdown** (this evaluation):
 
-| Entry | 必修 (B+E)<br>200点 | 一般 (A+C+D+F)<br>300点 | 必修 No-Img<br>175点 | 一般 No-Img<br>208点 |
+| Entry | Compulsory (B+E)<br>200 pts | General (A+C+D+F)<br>300 pts | Compulsory No-Img<br>175 pts | General No-Img<br>208 pts |
 |---|---:|---:|---:|---:|
 | **Kimi K2.6 (think_on, vision)** | 182/200 (91.00%) | 283/300 (94.33%) | 158/175 (90.29%) | 199/208 (95.67%) |
 | **Kimi K2.6 (think_off, vision)** | 172/200 (86.00%) | 272/300 (90.67%) | 148/175 (84.57%) | 191/208 (91.83%) |
@@ -105,9 +105,9 @@
 | **V3.2 (think_on, blind)** | 186/200 (93.00%) | 283/300 (94.33%) | 162/175 (92.57%) | 201/208 (96.63%) |
 | **V3.2 (think_off, blind)** | 161/200 (80.50%) | 270/300 (90.00%) | 142/175 (81.14%) | 190/208 (91.35%) |
 
-ブロック別正答率 (本検証):
+Block-level accuracy (this evaluation):
 
-| Entry | 119A 一般 | 119B 必修 | 119C 一般 | 119D 一般 | 119E 必修 | 119F 一般 |
+| Entry | 119A General | 119B Compulsory | 119C General | 119D General | 119E Compulsory | 119F General |
 |---|---:|---:|---:|---:|---:|---:|
 | **Kimi K2.6 (think_on, vision)** | 97.3% | 92.0% | 92.0% | 92.0% | 92.0% | 96.0% |
 | **Kimi K2.6 (think_off, vision)** | 94.7% | 82.0% | 89.3% | 89.3% | 90.0% | 89.3% |
@@ -116,63 +116,63 @@
 | **V3.2 (think_on, blind)** | 96.0% | 96.0% | 86.7% | 96.0% | 92.0% | **98.7%** |
 | **V3.2 (think_off, blind)** | 90.7% | 86.0% | 84.0% | 92.0% | 80.0% | 93.3% |
 
-**観察**:
-- **GLM-5.1 think_on / V3.2 think_on とも Overall 469/500 (93.80%) で完全同点**、Claude-Sonnet-4 (94.20%) 直下、Kimi K2.6 (93.00%) を上回る
-- Acc は GLM-5.1 379/400 (94.75%) > V3.2 377/400 (94.25%) > Kimi K2.6 / Claude-Sonnet-4 375/400 (93.75%)
-- think_on vs think_off: GLM-5.1 +36点 (433→469)、V3.2 +38点 (431→469) — 両モデル同程度の thinking 効果。特に必修問題で +20pt 以上向上 (3点配点問題が大きく改善)
-- think_off では GLM-5.1 と V3.2 がほぼ同点 (Overall 433 vs 431)、think 入れると両者とも前の3モデル群に追いつく
+**Observations**:
+- **GLM-5.1 think_on and V3.2 think_on are perfectly tied at Overall 469/500 (93.80%)**, just below Claude-Sonnet-4 (94.20%), surpassing Kimi K2.6 (93.00%)
+- Accuracy: GLM-5.1 379/400 (94.75%) > V3.2 377/400 (94.25%) > Kimi K2.6 / Claude-Sonnet-4 375/400 (93.75%)
+- think_on vs think_off: GLM-5.1 +36 points (433->469), V3.2 +38 points (431->469) -- both models show similar thinking benefits. Particularly compulsory questions improved by +20 pts or more (3-point-weighted questions improved substantially)
+- With think_off, GLM-5.1 and V3.2 are nearly tied (Overall 433 vs 431); with thinking enabled, both catch up to the top-3 model cluster
 
-#### 補足: legacy プロンプト形式 (`<answer>` タグ抽出) との比較
+#### Supplement: Comparison with legacy prompt format (`<answer>` tag extraction)
 
-ハーネス清書前 (旧 default = 独自 `<answer>` タグ抽出) の測定値。公式LB形式に乗り換えた際の差分確認用:
+Measurements from before harness cleanup (old default = custom `<answer>` tag extraction). For verifying the delta when switching to official LB format:
 
 | Entry | Overall Score | Overall Acc. | No-Img Score | No-Img Acc. |
 |---|---|---|---|---|
-| Kimi K2.6 (legacy `<answer>` tag、vision) | 455/500 (91.00%) | 367/400 (91.75%) | 346/383 (90.34%) | 272/297 (91.58%) |
-| GLM-5.1 (legacy `<answer>` tag、text-only) | - | - | 357/383 (93.21%) | 281/297 (94.61%) |
+| Kimi K2.6 (legacy `<answer>` tag, vision) | 455/500 (91.00%) | 367/400 (91.75%) | 346/383 (90.34%) | 272/297 (91.58%) |
+| GLM-5.1 (legacy `<answer>` tag, text-only) | - | - | 357/383 (93.21%) | 281/297 (94.61%) |
 
-形式差分 (新 default - legacy):
+Format delta (new default - legacy):
 
 | | Score | Acc. (No-Img) |
 |---|---|---|
-| Kimi K2.6 (No-Img) | +11 (346→357) | +9問 (272→281、+3.03pt) |
-| GLM-5.1 (No-Img) | +4 (357→361) | +4問 (281→285、+1.35pt) |
+| Kimi K2.6 (No-Img) | +11 (346->357) | +9 questions (272->281, +3.03pt) |
+| GLM-5.1 (No-Img) | +4 (357->361) | +4 questions (281->285, +1.35pt) |
 
-**観察**: 両モデルとも公式LB形式 (`answer:` 行) で改善するが Kimi K2.6 の方が改善幅が大きい (`<answer>` タグの遵守率に差)。**順位 (GLM ≈ V3.2 > Kimi on No-Img) はどちらの形式でも変わらず**、結論はロバスト。
+**Observation**: Both models improve with the official LB format (`answer:` line), but Kimi K2.6 shows a larger improvement (difference in `<answer>` tag compliance rates). **The ranking (GLM ~ V3.2 > Kimi on No-Img) is unchanged under either format**, so the conclusion is robust.
 
-### JMED-LLM (MCQ 3タスク、`κ(accuracy)` 形式) — Avg κ で並び替え
+### JMED-LLM (MCQ 3 tasks, `kappa(accuracy)` format) -- Sorted by Avg kappa
 
-| Entry | jmmlu_med | crade | rrtnm | Avg κ |
+| Entry | jmmlu_med | crade | rrtnm | Avg kappa |
 |---|---|---|---|---|
-| **Kimi K2.6 (本検証 think_on)** | **0.90(0.92)** | **0.67(0.81)** | **0.90(0.93)** | **0.823** |
-| **GLM-5.1 (本検証 think_on)** | **0.89(0.92)** | **0.64(0.81)** | **0.89(0.92)** | **0.807** |
-| **DeepSeek V3.2 (本検証 think_on)** | **0.86(0.89)** | **0.55(0.70)** | **0.86(0.89)** | **0.757** |
-| Kimi K2.6 (本検証 think_off、参考) | 0.85(0.89) | 0.57(0.73) | 0.84(0.88) | 0.753 |
+| **Kimi K2.6 (this evaluation, think_on)** | **0.90(0.92)** | **0.67(0.81)** | **0.90(0.93)** | **0.823** |
+| **GLM-5.1 (this evaluation, think_on)** | **0.89(0.92)** | **0.64(0.81)** | **0.89(0.92)** | **0.807** |
+| **DeepSeek V3.2 (this evaluation, think_on)** | **0.86(0.89)** | **0.55(0.70)** | **0.86(0.89)** | **0.757** |
+| Kimi K2.6 (this evaluation, think_off, reference) | 0.85(0.89) | 0.57(0.73) | 0.84(0.88) | 0.753 |
 | gpt-4o-2024-08-06 | 0.82(0.87) | 0.54(0.53) | 0.85(0.90) | 0.737 |
-| DeepSeek V3.2 (本検証 think_off、参考) | 0.83(0.87) | 0.58(0.78) | 0.74(0.81) | 0.717 |
-| GLM-5.1 (本検証 think_off、参考) | 0.86(0.89) | 0.50(0.65) | 0.77(0.83) | 0.710 |
+| DeepSeek V3.2 (this evaluation, think_off, reference) | 0.83(0.87) | 0.58(0.78) | 0.74(0.81) | 0.717 |
+| GLM-5.1 (this evaluation, think_off, reference) | 0.86(0.89) | 0.50(0.65) | 0.77(0.83) | 0.710 |
 | gpt-4o-mini | 0.77(0.83) | 0.21(0.37) | 0.58(0.71) | 0.520 |
 | gemma-2-9b-it | 0.52(0.64) | 0.33(0.42) | 0.54(0.68) | 0.463 |
-| (参考) Llama-3-ELYZA-JP-8B (国産日本語FT) | 0.34(0.51) | 0.01(0.26) | 0.29(0.52) | 0.213 |
+| (reference) Llama-3-ELYZA-JP-8B (domestic Japanese fine-tuned) | 0.34(0.51) | 0.01(0.26) | 0.29(0.52) | 0.213 |
 
-出典: [sociocom/JMED-LLM](https://github.com/sociocom/JMED-LLM) leaderboard (本検証行除く)
+Source: [sociocom/JMED-LLM](https://github.com/sociocom/JMED-LLM) leaderboard (excluding rows from this evaluation)
 
-JMED-LLM 公式 LB に Claude 4系/GPT-5/Gemini 2.5+ の評価は無く、現状 GPT-4o が最新クラウド baseline。SMDIS/JCSTS は除外(`SPEC.md`)。
+The JMED-LLM official LB has no evaluations for Claude 4 family/GPT-5/Gemini 2.5+; currently GPT-4o is the latest cloud baseline. SMDIS/JCSTS are excluded (`SPEC.md`).
 
-### IgakuQA (2018-2022、5年合算)
+### IgakuQA (2018-2022, 5-year aggregate)
 
-PFN ([HF card](https://huggingface.co/pfnet/Preferred-MedLLM-Qwen-72B) / [arxiv 2504.18080](https://arxiv.org/abs/2504.18080)) の表を借用。**5年合計2485点満点、画像問題はテキストのみで盲解き** (PFN/Kasai+ と同 scope):
+Borrowing the table from PFN ([HF card](https://huggingface.co/pfnet/Preferred-MedLLM-Qwen-72B) / [arxiv 2504.18080](https://arxiv.org/abs/2504.18080)). **5-year total out of 2485 points, image-bearing questions solved as blind solving (text-only)** (same scope as PFN/Kasai+):
 
-| Entry | 5年合計 Score | 2018 | 2019 | 2020 | 2021 | 2022 |
+| Entry | 5-year Total Score | 2018 | 2019 | 2020 | 2021 | 2022 |
 |---|---:|---:|---:|---:|---:|---:|
-| **GLM-5.1 (本検証 think_on)** | **2283/2485 (91.87%)** | **455** | **458** | **460** | **450** | **460** |
-| **Kimi K2.6 (本検証 think_on)** | **2245/2485 (90.34%)** | **441** | **454** | **450** | **449** | **451** |
-| **DeepSeek V3.2 (本検証 think_on)** | **2205/2485 (88.73%)** | **437** | **441** | **448** | **434** | **445** |
+| **GLM-5.1 (this evaluation, think_on)** | **2283/2485 (91.87%)** | **455** | **458** | **460** | **450** | **460** |
+| **Kimi K2.6 (this evaluation, think_on)** | **2245/2485 (90.34%)** | **441** | **454** | **450** | **449** | **451** |
+| **DeepSeek V3.2 (this evaluation, think_on)** | **2205/2485 (88.73%)** | **437** | **441** | **448** | **434** | **445** |
 | Preferred-MedLLM-Qwen-72B | 2156/2485 (86.76%) | 434 | 420 | 439 | 430 | 433 |
 | GPT-4o | 2152/2485 (86.60%) | 427 | 431 | 433 | 427 | 434 |
-| Kimi K2.6 (本検証 think_off、参考) | 2113/2485 (85.03%) | 424 | 415 | 416 | 432 | 426 |
-| GLM-5.1 (本検証 think_off、参考) | 2129/2485 (85.67%) | 424 | 428 | 422 | 416 | 439 |
-| DeepSeek V3.2 (本検証 think_off、参考) | 2053/2485 (82.62%) | 406 | 412 | 401 | 414 | 420 |
+| Kimi K2.6 (this evaluation, think_off, reference) | 2113/2485 (85.03%) | 424 | 415 | 416 | 432 | 426 |
+| GLM-5.1 (this evaluation, think_off, reference) | 2129/2485 (85.67%) | 424 | 428 | 422 | 416 | 439 |
+| DeepSeek V3.2 (this evaluation, think_off, reference) | 2053/2485 (82.62%) | 406 | 412 | 401 | 414 | 420 |
 | Qwen2.5-72B | 1992/2485 (80.16%) | 412 | 394 | 394 | 393 | 399 |
 | Llama3-Preferred-MedSwallow-70B | 1976/2485 (79.52%) | 407 | 390 | 391 | 393 | 395 |
 | GPT-4 | 1944/2485 (78.23%) | 382 | 385 | 387 | 398 | 392 |
@@ -180,56 +180,56 @@ PFN ([HF card](https://huggingface.co/pfnet/Preferred-MedLLM-Qwen-72B) / [arxiv 
 | Llama-3.1-Swallow-70B-v0.1 | 1842/2485 (74.13%) | 379 | 378 | 379 | 351 | 355 |
 | Meta-Llama-3-70B | 1673/2485 (67.32%) | 353 | 340 | 348 | 314 | 318 |
 | GPT-3.5 | 1366/2485 (54.97%) | 266 | 250 | 266 | 297 | 287 |
-| (人間) 学生多数決 | 1784/1864 (95.71%、No-Img) | - | - | - | - | - |
+| (human) Student majority vote | 1784/1864 (95.71%, No-Img) | - | - | - | - | - |
 
-出典: 比較行 = [pfnet/Preferred-MedLLM-Qwen-72B (HF card)](https://huggingface.co/pfnet/Preferred-MedLLM-Qwen-72B) / [arxiv 2504.18080](https://arxiv.org/abs/2504.18080)。学生行 = [arxiv 2303.18027](https://arxiv.org/abs/2303.18027) / [jungokasai/IgakuQA](https://github.com/jungokasai/IgakuQA) (No-Img scope のため別建て)
+Source: Comparison rows = [pfnet/Preferred-MedLLM-Qwen-72B (HF card)](https://huggingface.co/pfnet/Preferred-MedLLM-Qwen-72B) / [arxiv 2504.18080](https://arxiv.org/abs/2504.18080). Student row = [arxiv 2303.18027](https://arxiv.org/abs/2303.18027) / [jungokasai/IgakuQA](https://github.com/jungokasai/IgakuQA) (No-Img scope, listed separately)
 
-**注**:
-- **本検証3モデルとも PFN 表トップ (Preferred-MedLLM-Qwen-72B 431.2/年、GPT-4o 430.4/年) を上回る**
-  - GLM-5.1: 456.6/年 (+25.4点/年)
-  - Kimi K2.6: 449.0/年 (+18.0点/年)
-  - V3.2 think_on: 441.0/年 (+9.8点/年)
-- 5年全てで GLM-5.1 > Kimi K2.6 > V3.2 think_on の順
-- V3.2 think_on vs think_off: 全5年で +30〜47点/年向上 — thinking 効果は IgakuQA でも顕著
-- 画像問題 (text-only blind) acc: GLM-5.1 85.6% / Kimi K2.6 83.2%、text問題 acc: GLM-5.1 93.5% / Kimi K2.6 91.4% → **画像問題は画像見えてないのに 8割超解けてる = リーク疑い濃厚** (2018-2022 はネット解説サイトに完全に出回っている)
-- フロンティア (Claude 4系/GPT-5/Gemini 2.5+) は同様に事前学習リーク確実視で publicly な評価値も存在しない (2026-05 時点)
-- 最新モデル比較ラインは IgakuQA119 / JMLE2026 に移行
+**Notes**:
+- **All 3 models in this evaluation surpass the top of the PFN table (Preferred-MedLLM-Qwen-72B 431.2/year, GPT-4o 430.4/year)**
+  - GLM-5.1: 456.6/year (+25.4 pts/year)
+  - Kimi K2.6: 449.0/year (+18.0 pts/year)
+  - V3.2 think_on: 441.0/year (+9.8 pts/year)
+- GLM-5.1 > Kimi K2.6 > V3.2 think_on ranking holds across all 5 years
+- V3.2 think_on vs think_off: +30-47 pts/year improvement across all 5 years -- thinking effect is pronounced on IgakuQA as well
+- Image-bearing question (text-only blind) accuracy: GLM-5.1 85.6% / Kimi K2.6 83.2%; text question accuracy: GLM-5.1 93.5% / Kimi K2.6 91.4% -- **over 80% accuracy on image-bearing questions despite not seeing the images = strong suspected data contamination** (2018-2022 exams are fully available on online answer-explanation sites)
+- Frontier models (Claude 4 family/GPT-5/Gemini 2.5+) are similarly assumed to have pre-training data contamination, and no publicly available evaluation scores exist (as of 2026-05)
+- Latest model comparison has shifted to IgakuQA119 / JMLE2026
 
-### llm-jp-eval (短縮版)
+### llm-jp-eval (abbreviated)
 
 | Entry | JCQA EM | JEMHopQA EM/F1 | JSQuAD EM/F1 | MGSM-ja math_equiv |
 |---|---:|---:|---:|---:|
 | **Kimi K2.6 (think_on)** | **0.979** | 0.617 / 0.747 | 0.806 / 0.912 | **0.904** |
 | **GLM-5.1 (think_on)** | 0.977 | **0.658** / - | 0.812 / - | 0.432 |
 | **DeepSeek V3.2 (think_on)** | **0.979** | 0.550 / 0.664 | 0.801 / 0.912 | 0.884 |
-| Kimi K2.6 (think_off、参考) | 0.963 | 0.325 / 0.357 | **0.817** / **0.925** | 0.880 |
-| GLM-5.1 (think_off、参考) | 0.949 | 0.367 / 0.395 | 0.634 / 0.724 | 0.808 |
-| DeepSeek V3.2 (think_off、参考) | 0.920 | 0.300 / 0.351 | 0.815 / 0.920 | 0.872 |
+| Kimi K2.6 (think_off, reference) | 0.963 | 0.325 / 0.357 | **0.817** / **0.925** | 0.880 |
+| GLM-5.1 (think_off, reference) | 0.949 | 0.367 / 0.395 | 0.634 / 0.724 | 0.808 |
+| DeepSeek V3.2 (think_off, reference) | 0.920 | 0.300 / 0.351 | 0.815 / 0.920 | 0.872 |
 
-比較相手は **未補強**(Nejumi LB は評価条件が異なり直接引用不可)。後日 OpenRouter 等の OpenAI 互換エンドポイント経由で Claude/GPT/Gemini を本ハーネスから叩いて apples-to-apples 値を埋める方針。
+No external baselines added (Nejumi LB uses different evaluation conditions, making direct citation inappropriate). Plan to fill apples-to-apples values by querying Claude/GPT/Gemini through OpenRouter or other OpenAI-compatible endpoints via this harness at a later date.
 
-### thinking 効果まとめ (think_on - think_off)
+### Thinking Effect Summary (think_on - think_off)
 
-モデルごとの差分 (Δ):
+Per-model deltas:
 
-| Entry | JMLE2026 (/500) | IgakuQA119 (/500) | IgakuQA 5年合計 (/2485) | JMED-LLM Avg κ |
+| Entry | JMLE2026 (/500) | IgakuQA119 (/500) | IgakuQA 5-year Total (/2485) | JMED-LLM Avg kappa |
 |---|---:|---:|---:|---:|
-| **Kimi K2.6** | +8 (472→480) | +21 (444→465) | +132 (2113→2245) | +0.070 (0.753→0.823) |
-| **GLM-5.1** | +25 (456→481) | +36 (433→469) | +154 (2129→2283) | +0.097 (0.710→0.807) |
-| **DeepSeek V3.2** | +17 (458→475) | +38 (431→469) | +152 (2053→2205) | +0.040 (0.717→0.757) |
+| **Kimi K2.6** | +8 (472->480) | +21 (444->465) | +132 (2113->2245) | +0.070 (0.753->0.823) |
+| **GLM-5.1** | +25 (456->481) | +36 (433->469) | +154 (2129->2283) | +0.097 (0.710->0.807) |
+| **DeepSeek V3.2** | +17 (458->475) | +38 (431->469) | +152 (2053->2205) | +0.040 (0.717->0.757) |
 
-**観察**:
-- IgakuQA119 / IgakuQA (国試系、3点必修問題含む) で **GLM/V3.2 は +35〜40点級の伸び**、Kimi は +20点台と控えめ → Kimi は think_off でも医療MCQをかなり解けるため余地が小さい
-- JMLE2026 (画像問題込み) では Kimi の伸び幅が最小 (+8) — vision モデルが think_off でも画像活用で底上げされてる影響
-- JMED-LLM では **GLM-5.1 が+0.097 で最大の改善**、Kimi が +0.07、V3.2 が +0.04 — V3.2 は think_off でも JMED-LLM がそこそこ解ける
-- 共通傾向: thinking が一番効くのは **必修問題 (3点重み)** と **長文症例** — 思考過程を要求する問題で確実に伸びる
-- think_off → think_on のコスト: TTAT 中央値が 0.1s → 7-15s (~70-150倍)、decode tok/s は ~80% に低下 → 必要な場面以外は think_off 運用が経済的
+**Observations**:
+- On IgakuQA119 / IgakuQA (JNMLE family, including 3-point compulsory questions), **GLM/V3.2 gain +35-40 points**, while Kimi gains a more modest +20 points -- Kimi already solves medical MCQs well with think_off, leaving less room for improvement
+- On JMLE2026 (including image-bearing questions), Kimi's gain is smallest (+8) -- the vision model is already boosted by image utilization even with think_off
+- On JMED-LLM, **GLM-5.1 shows the largest improvement at +0.097**, Kimi at +0.07, V3.2 at +0.04 -- V3.2 already handles JMED-LLM reasonably well with think_off
+- Common pattern: thinking helps most on **compulsory questions (3-point weight)** and **long clinical case questions** -- reliably improves on questions that demand a reasoning process
+- think_off -> think_on cost: TTAT median goes from 0.1s to 7-15s (~70-150x), decode tok/s drops to ~80% -- think_off operation is more economical outside of situations that specifically require thinking
 
-## 速度参考(TTAT 中央値・decode tok/s 中央値、シングルクライアント)
+## Speed Reference (TTAT median, decode tok/s median, single client)
 
-各 Phase の起動構成は対応する `scripts/sglang-*.sh` を参照(EAGLE 有無等で差あり)。
+Refer to the corresponding `scripts/sglang-*.sh` for each Phase's launch configuration (EAGLE presence, etc. causes differences).
 
-### TTAT p50 (秒)
+### TTAT p50 (seconds)
 
 | Entry | jcommonsenseqa | jemhopqa | jsquad | mgsm | igakuqa | igakuqa119 | jmle2026 | jmmlu_med | crade | rrtnm |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -251,53 +251,53 @@ PFN ([HF card](https://huggingface.co/pfnet/Preferred-MedLLM-Qwen-72B) / [arxiv 
 | V3.2 ON | 59.2 | 69.4 | 71.6 | 63.8 | 59.1 | 56.1 | 65.6 | 74.5 |
 | V3.2 OFF | 55.5 | 89.7 | 76.8 | 91.9 | 50.1 | 38.6 | 99.8 | 101.8 |
 
-GLM-5.1 は EAGLE spec decoding 有効、Kimi K2.6 は**計測時点では** EAGLE3 ドラフト未公開のため spec decoding 無し。2026-05 に `lightseekorg/kimi-k2.6-eagle3` が公開され `scripts/llm/sglang-kimi-k2.6.sh` で有効化済み — 速度のみ再ラン予定(精度は spec decoding 非依存)。
+GLM-5.1 has EAGLE speculative decoding enabled. Kimi K2.6 did **not have** EAGLE3 draft available **at the time of measurement**, so speculative decoding was disabled. In 2026-05, `lightseekorg/kimi-k2.6-eagle3` was released and enabled in `scripts/llm/sglang-kimi-k2.6.sh` -- speed-only re-run planned (accuracy is independent of speculative decoding).
 
-## 簡易使い方
+## Quick Start
 
 ```bash
-# 1. 依存
+# 1. Dependencies
 uv sync --group evals
 
-# 2. データセット取得 (gitignored、外部ライセンスは各リポジトリ参照)
+# 2. Fetch datasets (gitignored; see each repository for external licenses)
 ./evals/scripts/fetch_datasets.sh
 
-# 3. llm-jp-eval は前処理が別途必要 (詳細 SPEC.md)
+# 3. llm-jp-eval requires separate preprocessing (details in SPEC.md)
 cd evals/datasets/llm_jp_eval && uv sync && cd -
 for t in jcommonsenseqa jemhopqa jsquad mgsm; do
   (cd evals/datasets/llm_jp_eval && uv run python scripts/preprocess_dataset.py -d "$t" -o ./dataset)
 done
 
-# 4. SGLang 起動 (例: GLM-5.1)
-./scripts/sglang-glm5.1.sh   # 別ターミナル
+# 4. Start SGLang (example: GLM-5.1)
+./scripts/sglang-glm5.1.sh   # in a separate terminal
 
-# 5. スモーク確認 → 本ラン
+# 5. Smoke test -> full run
 ./evals/scripts/run_phase.sh glm-5.1 _smoke --limit 5
 ./evals/scripts/run_phase.sh glm-5.1 glm-5.1-think-on
 
-# 6. 集計 (公開LB形式の Markdown 行も出力)
+# 6. Summarize (also outputs Markdown rows in official LB format)
 uv run --group evals python evals/scripts/summarize.py evals/results/glm-5.1-think-on
 ```
 
-タスク族の個別フラグや `run_phase.sh` の引数振り分け、`summarize.py` の出力詳細は [`SPEC.md`](./SPEC.md)。
+For task-family-specific flags, `run_phase.sh` argument routing, and `summarize.py` output details, see [`SPEC.md`](./SPEC.md).
 
-## ディレクトリ
+## Directory Layout
 
 ```
 evals/
-├── README.md             # このファイル(結果サマリ + 簡易使い方)
-├── SPEC.md               # 詳細仕様(ベンチ・採点・ランナー)
-├── harness/client.py     # streaming + reasoning分離クライアント
+├── README.md             # This file (results summary + quick start)
+├── SPEC.md               # Detailed specification (benchmarks, scoring, runner)
+├── harness/client.py     # Streaming + reasoning-separation client
 ├── tasks/
 │   ├── llm_jp_eval_subset/
-│   ├── igakuqa/          # 画像問題は常に text-only blind (PFN/Kasai+ scope = 2485点)
-│   ├── igakuqa119/       # vision auto-probe、vision NG → blind (全400問、Overall列populated)
-│   ├── jmle2026/         # vision auto-probe、vision NG → blind (全400問、Overall列populated)
+│   ├── igakuqa/          # Image-bearing questions always text-only blind (PFN/Kasai+ scope = 2485 pts)
+│   ├── igakuqa119/       # vision auto-probe; vision NG -> blind (all 400 questions, Overall column populated)
+│   ├── jmle2026/         # vision auto-probe; vision NG -> blind (all 400 questions, Overall column populated)
 │   └── jmed_llm/
 ├── scripts/
 │   ├── fetch_datasets.sh
-│   ├── run_phase.sh      # 1モデル全タスク連続実行
-│   └── summarize.py      # 結果集約 (Markdown + Grafana用 timestamp)
-├── datasets/             # gitignored (clone先)
+│   ├── run_phase.sh      # Run all tasks for 1 model in sequence
+│   └── summarize.py      # Result aggregation (Markdown + Grafana-compatible timestamps)
+├── datasets/             # gitignored (clone destination)
 └── results/<subdir>/<task>.json   # gitignored
 ```

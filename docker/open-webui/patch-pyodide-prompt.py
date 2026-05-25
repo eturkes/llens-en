@@ -1,34 +1,37 @@
 #!/usr/bin/env python3
 """
-OWUI が hardcode している CODE_INTERPRETER_PYODIDE_PROMPT を
-LLENS 仕様 (prompts/code-interpreter.md の内容) に差し替える (build 時に実行)。
+Replaces the hardcoded CODE_INTERPRETER_PYODIDE_PROMPT in OWUI with the
+LLENS specification (contents of prompts/code-interpreter.md). Run at build time.
 
-オリジナルは「Do not install packages — pip install, subprocess, and
-micropip.install() are not available」と一律禁止しており、これは LLENS が
-/static/pyodide-extra/ 配下の wheel を micropip.install で導入する設計と矛盾する。
+The original prompt blanket-bans package installation ("Do not install packages
+-- pip install, subprocess, and micropip.install() are not available"), which
+conflicts with LLENS's design of installing wheels via micropip.install from
+/static/pyodide-extra/.
 
-prompts/code-interpreter.md を単一情報源として、その中身をそのまま注入する。
+Uses prompts/code-interpreter.md as the single source of truth and injects its
+contents directly.
 
-- 既に LLENS 化済みなら no-op (idempotent)
-- 上書き対象パターンが見つからない / 注入元 md が無いと build を失敗させる
+- If already patched to LLENS version, this is a no-op (idempotent)
+- If the target pattern is not found or the source md is missing, the build fails
 
-────────────────────────────────────────────────────────────────────────
-参考: 上書き対象の OWUI オリジナル prompt (v0.9.5 時点)
-────────────────────────────────────────────────────────────────────────
-OWUI を上げるときは下と upstream の現行版を diff して、
-我々の LLENS 版 prompt (prompts/code-interpreter.md) に取り込むべき変更が
-無いか確認すること。新版で構造が変わったら本ファイル末尾の正規表現も要見直し。
+------------------------------------------------------------------------
+Reference: original OWUI prompt being overwritten (as of v0.9.5)
+------------------------------------------------------------------------
+When upgrading OWUI, diff the below against the current upstream version and
+check whether any changes should be incorporated into our LLENS prompt
+(prompts/code-interpreter.md). If the structure changes in a new version,
+the regex at the end of this file also needs updating.
 
-抽出コマンド:
+Extraction command:
   docker run --rm --entrypoint sh ghcr.io/open-webui/open-webui:<TAG> -c \\
     'python3 -c "import re; print(re.search(r\\"CODE_INTERPRETER_PYODIDE_PROMPT\\\\s*=\\\\s*(\\\\\\"\\\\\\"\\\\\\"[\\\\s\\\\S]*?\\\\\\"\\\\\\"\\\\\\")\\", open(\\"/app/backend/open_webui/config.py\\").read()).group(0))"'
 
-──── ghcr.io/open-webui/open-webui:v0.9.5 ────
+---- ghcr.io/open-webui/open-webui:v0.9.5 ----
 CODE_INTERPRETER_PYODIDE_PROMPT = '''
 
 ##### Pyodide Environment
 
-- This Python environment runs via Pyodide in the browser. **Do not install packages** — `pip install`, `subprocess`, and `micropip.install()` are not available.
+- This Python environment runs via Pyodide in the browser. **Do not install packages** --- `pip install`, `subprocess`, and `micropip.install()` are not available.
 - If a required library is unavailable, use an alternative approach with available modules. Do not attempt to install anything.
 
 ##### Persistent File System
@@ -38,16 +41,16 @@ CODE_INTERPRETER_PYODIDE_PROMPT = '''
 - The file system persists across code executions within the same session.
 - Use `import os; os.listdir('/mnt/uploads')` to discover available files.
 '''
-────────────────────────────────────────────────────────────────────────
+------------------------------------------------------------------------
 """
 import pathlib
 import re
 import sys
 
 TARGET = pathlib.Path("/app/backend/open_webui/config.py")
-SOURCE = pathlib.Path("/tmp/code-interpreter.md")  # Dockerfile が COPY する
-# 置換後にだけ現れる日本語フレーズで idempotent 検出
-MARKER = "## コード実行環境"
+SOURCE = pathlib.Path("/tmp/code-interpreter.md")  # Copied by Dockerfile
+# Phrase that only appears after patching, used for idempotent detection
+MARKER = "## Code Execution Environment"
 
 
 def main() -> int:
@@ -68,13 +71,13 @@ def main() -> int:
     if not pattern.search(text):
         print(
             f"[patch-pyodide-prompt] ERROR: pattern not found in {TARGET}.\n"
-            "  OWUI のバージョン更新で定数構造が変わった可能性。\n"
-            "  docker/open-webui/patch-pyodide-prompt.py の正規表現を要見直し。",
+            "  The constant structure may have changed in a newer OWUI version.\n"
+            "  Review the regex in docker/open-webui/patch-pyodide-prompt.py.",
             file=sys.stderr,
         )
         return 1
 
-    # md 本文に "\"\"\"" が含まれていたらエスケープ (現状は含まないが念のため)
+    # Escape if the md body contains triple-quotes (not currently the case, but just in case)
     if '"""' in body:
         print(
             "[patch-pyodide-prompt] ERROR: source md contains triple-quote, "

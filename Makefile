@@ -4,25 +4,25 @@
         owui-sync
 
 help:
-	@echo "推論サーバ起動 (前面実行 — Ctrl+C で停止):"
+	@echo "Inference server launch (foreground — stop with Ctrl+C):"
 	@echo "  make run-ds3           - DeepSeek V3.2   (sglang)"
 	@echo "  make run-ds4           - DeepSeek V4 Pro (sglang)"
 	@echo "  make run-glm           - GLM-5.1         (sglang)"
-	@echo "  make run-kimi          - Kimi K2.6       (sglang, EAGLE3 spec decoding 有効)"
-	@echo "  make run-kimi-noeagle  - Kimi K2.6       (sglang, spec decoding なし)"
+	@echo "  make run-kimi          - Kimi K2.6       (sglang, EAGLE3 spec decoding enabled)"
+	@echo "  make run-kimi-noeagle  - Kimi K2.6       (sglang, spec decoding disabled)"
 	@echo "  make run-qwen          - Qwen3.5         (sglang)"
 	@echo ""
-	@echo "搬入前作業 (preflight):"
-	@echo "  make preflight-audit   - 現状確認 (read-only、いつでも何度でも)"
-	@echo "  make preflight-apply   - 不要設定 omit + 構成適用 (idempotent)"
-	@echo "  make preflight-scan    - ClamAV 全体スキャン (シャットダウン直前)"
+	@echo "Pre-deployment tasks (preflight):"
+	@echo "  make preflight-audit   - Status check (read-only, can be run anytime, repeatedly)"
+	@echo "  make preflight-apply   - Disable unnecessary settings + apply configuration (idempotent)"
+	@echo "  make preflight-scan    - ClamAV full scan (run just before shutdown)"
 	@echo ""
 	@echo "Open WebUI:"
-	@echo "  make owui-sync         - owui/filters/ + owui/tools/ を OWUI に同期 (.env の OWUI_API_KEY 必要)"
+	@echo "  make owui-sync         - Sync owui/filters/ + owui/tools/ to OWUI (requires OWUI_API_KEY in .env)"
 	@echo ""
-	@echo "ログ出力先: logs/"
+	@echo "Log output directory: logs/"
 
-# ----- 推論サーバ起動 -----
+# ----- Inference server launch -----
 run-ds3:
 	bash scripts/llm/sglang-deepseek-v3.2.sh
 
@@ -41,7 +41,7 @@ run-kimi-noeagle:
 run-qwen:
 	bash scripts/llm/sglang-qwen3.5.sh
 
-# ----- 搬入前作業 -----
+# ----- Pre-deployment tasks -----
 preflight-audit:
 	sudo bash scripts/preflight/audit.sh
 

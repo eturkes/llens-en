@@ -118,7 +118,7 @@ def _main() -> None:
     parser = argparse.ArgumentParser(description="Smoke test for streaming client.")
     parser.add_argument("--base-url", default="http://localhost:8000")
     parser.add_argument("--model", default="glm-5.1")
-    parser.add_argument("--prompt", default="日本の首都はどこですか。一文で答えて。")
+    parser.add_argument("--prompt", default="What is the capital of Japan? Answer in one sentence.")
     parser.add_argument("--no-think", action="store_true")
     parser.add_argument("--max-tokens", type=int, default=2048)
     args = parser.parse_args()

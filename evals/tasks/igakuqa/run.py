@@ -1,9 +1,10 @@
-"""Runner for IgakuQA (jungokasai/IgakuQA) — 2018-2022 国試 5年分。
+"""Runner for IgakuQA (jungokasai/IgakuQA) — 5 years of national medical exams (2018-2022).
 
-400問/年 × 5 = 2000問、計2485点。Multi-letter answers (e.g., "ac") は
-集合一致で採点。画像問題は **text-only blind** で評価 (元リポが画像本体を
-同梱しておらず、PFN/Kasai+ の公開LBもこの方式)。これにより PFN HF card /
-arxiv 2504.18080 と同 scope (2485-pt) で並ぶ。
+400 questions/year x 5 = 2000 questions, totaling 2485 points. Multi-letter answers
+(e.g., "ac") are scored by set matching. Image questions are evaluated in
+**text-only blind** mode (the original repo does not bundle image files, and the
+PFN/Kasai+ public leaderboard also uses this approach). This aligns with the same
+scope (2485-pt) as the PFN HF card / arxiv 2504.18080.
 """
 
 from __future__ import annotations
@@ -28,9 +29,10 @@ ALL_YEARS = ["2018", "2019", "2020", "2021", "2022"]
 LETTERS = "abcdefghij"  # supports up to 10 choices; usual is 5
 
 INSTRUCTION = (
-    "以下は日本の医師国家試験の問題です。選択肢の記号({letters})から正解を選び、"
-    "答えだけを <answer></answer> タグで囲んで返してください。"
-    "複数の選択肢が正解の場合は記号を連結してください(例: <answer>ac</answer>)。"
+    "The following is a question from the Japanese National Medical Licensing Examination. "
+    "Select the correct answer(s) from the choices ({letters}) and return only your answer "
+    "enclosed in <answer></answer> tags. "
+    "If multiple choices are correct, concatenate the letters (e.g., <answer>ac</answer>)."
 )
 
 EXTRACT_RE = re.compile(r"<answer>(.*?)</answer>", re.DOTALL)
@@ -89,8 +91,8 @@ def build_messages(problem: dict[str, Any]) -> list[dict[str, Any]]:
     instruction = INSTRUCTION.format(letters="/".join(letters))
     user = (
         f"{instruction}\n\n"
-        f"問題: {problem['problem_text']}\n\n"
-        f"選択肢:\n{choice_lines}"
+        f"Question: {problem['problem_text']}\n\n"
+        f"Choices:\n{choice_lines}"
     )
     return [{"role": "user", "content": user}]
 
@@ -121,8 +123,8 @@ def run(
     if limit:
         problems = problems[:limit]
 
-    # `thinking` (Kimi/V3.2) と `enable_thinking` (GLM) を両方送る。
-    # 関係ないキーは各モデルの template が無視する。
+    # Send both `thinking` (Kimi/V3.2) and `enable_thinking` (GLM).
+    # Irrelevant keys are ignored by each model's template.
     extra_body: dict[str, Any] = {
         "chat_template_kwargs": {
             "thinking": not no_think,
@@ -203,7 +205,7 @@ def _bucket(samples: list[SampleResult]) -> dict[str, Any]:
 
 def compute_leaderboard(samples: list[SampleResult]) -> dict[str, Any]:
     """IgakuQA leaderboard format. Each problem already carries a `points`
-    field in the source data (typically 1, occasionally 3 for 必修問題).
+    field in the source data (typically 1, occasionally 3 for required questions).
     """
     no_image = [s for s in samples if not s.has_image]
     return {

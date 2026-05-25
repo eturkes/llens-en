@@ -1,14 +1,13 @@
 services:
   open-webui:
-    # 上流 OWUI に PDF→画像変換用パッケージを焼き込んだ自前イメージ。
-    # Dockerfile は docker/open-webui/Dockerfile。バージョン上げ時は
-    # Dockerfile の FROM タグと下の image タグを揃えて
+    # Custom image based on upstream OWUI with PDF-to-image conversion packages baked in.
+    # Dockerfile is at docker/open-webui/Dockerfile. When upgrading versions,
+    # align the Dockerfile FROM tag and the image tag below, then rebuild with:
     #   docker compose build --pull open-webui
-    # でリビルド。
     image: llens/open-webui:v0.9.5
     build:
-      # build context は repo root。Dockerfile から prompts/code-interpreter.md を
-      # COPY する必要があるため。.dockerignore で重量級ディレクトリは除外済。
+      # Build context is the repo root because the Dockerfile needs to COPY
+      # prompts/code-interpreter.md. Heavy directories are excluded via .dockerignore.
       context: .
       dockerfile: docker/open-webui/Dockerfile
     container_name: llens-open-webui
@@ -28,11 +27,11 @@ services:
       - ENABLE_PIP_INSTALL_FRONTMATTER_REQUIREMENTS=false
       - ENABLE_EVALUATION_ARENA_MODELS=false
       - ENABLE_API_KEYS=true
-      - 'DEFAULT_PROMPT_SUGGESTIONS=[{"title":["はじめての方へ","LLENSの使い方"],"content":"はじめて使います。何ができるか教えてください。"}]'
+      - 'DEFAULT_PROMPT_SUGGESTIONS=[{"title":["For new users","How to use LLENS"],"content":"This is my first time using LLENS. What can it do?"}]'
     volumes:
       - open-webui-data:/app/backend/data
     ports:
-      # Caddy (:80) もしくは開発時はCloudflare Tunnelでアクセス
+      # Access via Caddy (:80) or Cloudflare Tunnel during development
       - "127.0.0.1:8080:8080"
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -41,11 +40,11 @@ services:
     restart: unless-stopped
 
   docling:
-    # CPU 版。GPU 版は SGLang が H200x8 を専有しているため使えない。
+    # CPU version. GPU version cannot be used because SGLang occupies all H200x8 GPUs.
     image: quay.io/docling-project/docling-serve:v1.17.0
     container_name: llens-docling
     ports:
-      # OWUI からは docker network 内で docling:5001 で届く。host 側は debug 用 localhost のみ
+      # Reachable from OWUI via docker network at docling:5001. Host-side is localhost only for debugging
       - "127.0.0.1:5001:5001"
     restart: unless-stopped
 
@@ -56,7 +55,7 @@ services:
     cap_add:
       - SYS_ADMIN
     ports:
-      # Prometheus からは docker network 内で dcgm-exporter:9400 で届く。host 側は debug 用のみ
+      # Reachable from Prometheus via docker network at dcgm-exporter:9400. Host-side is for debugging only
       - "127.0.0.1:9400:9400"
     deploy:
       resources:
@@ -71,7 +70,7 @@ services:
     container_name: llens-prometheus
     restart: unless-stopped
     ports:
-      # Grafana からは docker network 内で prometheus:9090 で届く。host 側は debug 用のみ
+      # Reachable from Grafana via docker network at prometheus:9090. Host-side is for debugging only
       - "127.0.0.1:9090:9090"
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
@@ -80,12 +79,12 @@ services:
       - "host.docker.internal:host-gateway"
 
   grafana:
-    # 13.0 系の patch は自動追従。minor 更新 (13.1 以降) は手動でタグを上げる。
+    # 13.0.x patches are auto-tracked. Minor updates (13.1+) require manually bumping the tag.
     image: grafana/grafana:13.0
     container_name: llens-grafana
     restart: unless-stopped
     ports:
-      # HINES 全体から touch 可。volume が空の時 .env の GRAFANA_ADMIN_PASSWORD が seed される
+      # Accessible from the entire HINES network. GRAFANA_ADMIN_PASSWORD from .env is seeded when the volume is empty
       - "9000:3000"
     volumes:
       - grafana_data:/var/lib/grafana

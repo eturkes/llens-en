@@ -1,9 +1,9 @@
 #!/bin/bash
-# Open WebUI のユーザー復元スクリプト (冪等)。
-#   - 判定は email のみ。target に同じ email があれば丸ごとスキップ
-#   - user + auth は id で紐づけてセットで入る (片方だけ入ることは無い)
-#   - 既存の行は上書きしない (= 搬入先で追加されたユーザーは保持)
-#   - 同じ dump を何度流しても安全 (2 回目以降は全件 skip される)
+# Open WebUI user restore script (idempotent).
+#   - Matching is by email only. If the target has the same email, the row is skipped entirely
+#   - user + auth are linked by id and inserted as a pair (one without the other never occurs)
+#   - Existing rows are not overwritten (= users added on the target are preserved)
+#   - Safe to run the same dump multiple times (2nd run onwards skips all rows)
 set -euo pipefail
 
 DUMP="${1:-}"

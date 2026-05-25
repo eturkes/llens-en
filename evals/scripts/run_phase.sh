@@ -23,7 +23,7 @@ shift 2
 
 # Vision capability is auto-probed inside igakuqa119 / jmle2026 (sends one test
 # image at startup; falls back to text-only if rejected).
-# --no-vision は両 vision タスクに転送、それ以外は全タスクに転送。
+# --no-vision is forwarded to both vision tasks; all other args are forwarded to every task.
 COMMON_ARGS=()
 VISION_ARGS=()
 for arg in "$@"; do

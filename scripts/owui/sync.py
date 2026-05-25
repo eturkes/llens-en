@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 """
-OWUI Functions / Tools 同期スクリプト
+OWUI Functions / Tools sync script
 
-owui/filters/*.py → /api/v1/functions/  (Function: filter / pipe / action)
-owui/tools/*.py   → /api/v1/tools/      (Tool: モデルが呼び出す function-calling)
+owui/filters/*.py -> /api/v1/functions/  (Function: filter / pipe / action)
+owui/tools/*.py   -> /api/v1/tools/      (Tool: function-calling invoked by the model)
 
-それぞれ GET で存在確認 → update or create。べき等。
-Function は create 後に /toggle と /toggle/global を叩いて active=True, global=True にする
-(default は両方 False)。Tool には toggle endpoint が無く access は OWUI 側で個別管理。
+For each file: GET to check existence -> update or create. Idempotent.
+Functions are toggled active=True, global=True via /toggle and /toggle/global after create
+(both default to False). Tools have no toggle endpoint; access is managed per-item in OWUI.
 
-必要な .env (REPO_ROOT/.env):
-  OWUI_API_KEY   - admin の API Key (OWUI Settings → Account → API Keys、`sk-` で始まる)
+Required .env (REPO_ROOT/.env):
+  OWUI_API_KEY   - admin API Key (OWUI Settings -> Account -> API Keys, starts with `sk-`)
   OWUI_BASE_URL  - default http://localhost:8080
 
-使い方:
-  ./scripts/owui/sync.py             # owui/filters/ owui/tools/ 両方
-  ./scripts/owui/sync.py mount_tool  # 個別指定 (拡張子なし、複数可)
+Usage:
+  ./scripts/owui/sync.py             # sync both owui/filters/ and owui/tools/
+  ./scripts/owui/sync.py mount_tool  # specify individual items (no extension, multiple OK)
 """
 
 from __future__ import annotations
@@ -31,26 +31,26 @@ import urllib.request
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 ENV_PATH = REPO_ROOT / ".env"
 
-# kind 別の dir / endpoint / 初回トグル
+# Per-kind: directory / endpoint / post-create toggles
 KINDS: dict[str, dict] = {
     "filter": {
         "dir": REPO_ROOT / "owui" / "filters",
         "api_prefix": "/api/v1/functions",
-        # create 直後は両 False。OWUI 設計上、ここを True にしないと load されない。
+        # Both are False right after create. By OWUI design, these must be True to be loaded.
         "post_create_toggles": ["toggle", "toggle/global"],
     },
     "tool": {
         "dir": REPO_ROOT / "owui" / "tools",
         "api_prefix": "/api/v1/tools",
-        # tool は toggle endpoint なし。access は /access/update で別途管理
+        # Tools have no toggle endpoint. Access is managed separately via /access/update
         "post_create_toggles": [],
     },
 }
 
 
 def load_env(path: pathlib.Path) -> dict[str, str]:
-    """.env を簡易 parse。KEY=VAL 行のみ、クォート除去、コメント無視。
-    OS 環境変数が優先されるよう、呼び出し側で os.environ を上書きする。"""
+    """Simple .env parser. KEY=VAL lines only, strips quotes, ignores comments.
+    Caller overrides with os.environ so OS env vars take priority."""
     env: dict[str, str] = {}
     if not path.exists():
         return env
@@ -64,9 +64,9 @@ def load_env(path: pathlib.Path) -> dict[str, str]:
 
 
 def parse_frontmatter(content: str) -> dict[str, str]:
-    """先頭 docstring から `key: value` 行だけ拾う。OWUI は multi-line description
-    (`description: |`) も解釈するが、ここで使うのは title (= name) のみで十分なため
-    1 行 KV だけ拾う最小実装。"""
+    """Extract `key: value` lines from the leading docstring. OWUI also interprets
+    multi-line descriptions (`description: |`), but since we only need the title (= name),
+    a minimal single-line KV parser is sufficient."""
     m = re.search(r'^"""(.*?)"""', content, re.S | re.M)
     if not m:
         return {}
@@ -100,7 +100,7 @@ def sync_one(
     cfg = KINDS[kind]
     fid = path.stem
     if not fid.replace("_", "").isalnum():
-        print(f"[SKIP] {kind}:{fid}: OWUI は id に alnum + _ のみ許可", file=sys.stderr)
+        print(f"[SKIP] {kind}:{fid}: OWUI only allows alnum + _ in id", file=sys.stderr)
         return False
 
     content = path.read_text()
@@ -118,7 +118,7 @@ def sync_one(
     status, _ = http_request("GET", f"{base}{prefix}/id/{fid}", api_key)
 
     if status == 200:
-        # 既存 → update。active / global / access は OWUI 側の現状を尊重 (touch しない)
+        # Exists -> update. Respect current active / global / access state in OWUI (do not touch)
         status, text = http_request(
             "POST", f"{base}{prefix}/id/{fid}/update", api_key, body
         )
@@ -132,10 +132,10 @@ def sync_one(
         return False
 
     if status == 401:
-        print(f"[FAIL] 認証失敗 (OWUI_API_KEY を確認)", file=sys.stderr)
+        print(f"[FAIL] Authentication failed (check OWUI_API_KEY)", file=sys.stderr)
         return False
 
-    # 不在 → create
+    # Not found -> create
     status, text = http_request(
         "POST", f"{base}{prefix}/create", api_key, body
     )
@@ -146,8 +146,8 @@ def sync_one(
         )
         return False
 
-    # create 直後の初期化トグル (filter のみ)。toggle は現状を反転するため、
-    # 「create 直後 (= False)」とわかっているこの 1 回だけ叩く。
+    # Post-create initialization toggles (filter only). Toggle flips the current state,
+    # so we only call it once right after create (when state is known to be False).
     toggle_msg = ""
     for ep in cfg["post_create_toggles"]:
         s, t = http_request(
@@ -155,19 +155,19 @@ def sync_one(
         )
         if s != 200:
             print(
-                f"[WARN] {fid} {ep} status={s} body={t[:200]} (UI で手動 toggle 必要)",
+                f"[WARN] {fid} {ep} status={s} body={t[:200]} (manual toggle required in UI)",
                 file=sys.stderr,
             )
     if cfg["post_create_toggles"]:
-        toggle_msg = "  → active=True, global=True"
+        toggle_msg = "  -> active=True, global=True"
     else:
-        toggle_msg = "  ※ access は OWUI 側で要設定"
+        toggle_msg = "  * access must be configured in OWUI"
     print(f"[CREATE {kind}] {fid}  ({name}){toggle_msg}")
     return True
 
 
 def discover_targets(only: set[str]) -> list[tuple[pathlib.Path, str]]:
-    """owui/filters/*.py と owui/tools/*.py を kind 付きで列挙。only 指定があればその id だけに絞る。"""
+    """List owui/filters/*.py and owui/tools/*.py with their kind. If only is specified, filter to those ids."""
     targets: list[tuple[pathlib.Path, str]] = []
     for kind, cfg in KINDS.items():
         for f in sorted(cfg["dir"].glob("*.py")):
@@ -178,15 +178,15 @@ def discover_targets(only: set[str]) -> list[tuple[pathlib.Path, str]]:
 
 
 def main() -> int:
-    env = {**load_env(ENV_PATH), **os.environ}  # OS env が優先
+    env = {**load_env(ENV_PATH), **os.environ}  # OS env takes priority
     api_key = env.get("OWUI_API_KEY")
     base_url = env.get("OWUI_BASE_URL", "http://localhost:8080")
     if not api_key:
-        print("OWUI_API_KEY が .env か環境変数に必要", file=sys.stderr)
+        print("OWUI_API_KEY required in .env or environment variables", file=sys.stderr)
         return 2
     if not api_key.startswith("sk-"):
         print(
-            f"OWUI_API_KEY の形式が変 (sk- で始まる必要あり、現在の先頭: {api_key[:5]!r})",
+            f"OWUI_API_KEY format invalid (must start with sk-, current prefix: {api_key[:5]!r})",
             file=sys.stderr,
         )
         return 2
@@ -198,11 +198,11 @@ def main() -> int:
         found = {p.stem for p, _ in targets}
         missing = only - found
         if missing:
-            print(f"指定 id が見つからない: {sorted(missing)}", file=sys.stderr)
+            print(f"Specified ids not found: {sorted(missing)}", file=sys.stderr)
             return 1
     if not targets:
         print(
-            f"対象なし (owui/filters/ owui/tools/ に *.py が無い、または only 指定にマッチせず)",
+            f"No targets (no *.py files in owui/filters/ owui/tools/, or no match for specified ids)",
             file=sys.stderr,
         )
         return 1

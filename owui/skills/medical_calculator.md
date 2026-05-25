@@ -1,227 +1,227 @@
 ---
 name: medical-calculator
-description: "臨床で頻用される医学計算・スコアリングのtool群 (`calc_*`) の使い方をまとめる。eGFR、CCr、MELD-Na、ALBI、FIB-4、APACHE II、Glasgow-Blatchford、Ranson、DIC (ISTH/厚労省)、酸塩基統合解析の10関数を提供する。利用者からの相談で計算・スコアリングが必要になった時、自前の暗算ではなく必ず本tool群を使うこと。BMI、BSA、補正Ca、A-aDO2 等の単純な式は本tool群には含まれない (内部の算術で計算する)。"
+description: "A collection of medical calculation and scoring tools (`calc_*`) frequently used in clinical practice. Provides 10 functions: eGFR, CCr, MELD-Na, ALBI, FIB-4, APACHE II, Glasgow-Blatchford, Ranson, DIC (ISTH/JMHW), and integrated acid-base analysis. When a calculation or scoring is needed during a consultation with a user, always use these tools rather than performing mental arithmetic. Simple formulas such as BMI, BSA, corrected Ca, and A-aDO2 are not included in this tool set (calculate using internal arithmetic)."
 ---
 
 # Medical Calculator (`calc_*`)
 
-## いつ使うか
+## When to Use
 
-医師との対話の中で、以下の計算・スコアリングが必要になった時。**自前の暗算で済ませず必ずtoolを呼ぶこと**。式の分岐や閾値判定が複雑で、暗算ではミスが出やすいものを集めている。
+When the following calculations or scoring are needed during a conversation with a physician. **Always call the tool rather than performing mental arithmetic**. This set contains formulas where branching logic and threshold decisions are complex and prone to error when done mentally.
 
-| 領域 | 関数 | 用途 |
+| Domain | Function | Purpose |
 |------|------|------|
-| 腎 | `calc_egfr_ckdepi2021` | eGFR (CKD-EPI 2021) |
-| 腎 | `calc_egfr_jsn` | eGFR (日本腎臓学会 2009、国内標準) |
-| 腎 | `calc_ccr_cockcroft_gault` | CCr (薬剤投与量調整) |
-| 腎 | `calc_free_water_deficit` | 自由水欠乏量 (高Na血症) |
-| 肝 | `calc_meld_na` | MELD-Na (移植適応等) |
-| 肝 | `calc_albi_grade` | ALBI grade (HCC等の予後) |
-| 肝 | `calc_fib4` | FIB-4 (慢性肝炎の線維化スクリーニング) |
-| ICU/救急 | `calc_apache2` | APACHE II (重症度) |
-| ICU/救急 | `calc_sofa` | SOFA (Sepsis-3敗血症診断、経時的臓器障害評価) |
-| 消化器 | `calc_glasgow_blatchford` | GBS (上部消化管出血リスク) |
-| 消化器 | `calc_ranson_criteria` | Ranson (急性膵炎重症度) |
-| 血液 | `calc_dic_score` | DIC (ISTH overt / 厚労省) |
-| 血ガス | `calc_acid_base_analysis` | 酸塩基統合解析 (一次性+代償+AG) |
+| Renal | `calc_egfr_ckdepi2021` | eGFR (CKD-EPI 2021) |
+| Renal | `calc_egfr_jsn` | eGFR (Japanese Society of Nephrology 2009, domestic standard) |
+| Renal | `calc_ccr_cockcroft_gault` | CCr (drug dosage adjustment) |
+| Renal | `calc_free_water_deficit` | Free water deficit (hypernatremia) |
+| Hepatic | `calc_meld_na` | MELD-Na (transplant eligibility, etc.) |
+| Hepatic | `calc_albi_grade` | ALBI grade (prognosis in HCC, etc.) |
+| Hepatic | `calc_fib4` | FIB-4 (fibrosis screening in chronic hepatitis) |
+| ICU/Emergency | `calc_apache2` | APACHE II (severity) |
+| ICU/Emergency | `calc_sofa` | SOFA (Sepsis-3 sepsis diagnosis, serial organ dysfunction assessment) |
+| Gastroenterology | `calc_glasgow_blatchford` | GBS (upper GI bleeding risk) |
+| Gastroenterology | `calc_ranson_criteria` | Ranson (acute pancreatitis severity) |
+| Hematology | `calc_dic_score` | DIC (ISTH overt / JMHW) |
+| Blood Gas | `calc_acid_base_analysis` | Integrated acid-base analysis (primary + compensation + AG) |
 
-## 含まれないもの (内部算術で計算する)
+## Not Included (Calculate Using Internal Arithmetic)
 
-以下は単純な式で済むため本tool群には含まれていない:
+The following are not included in this tool set as they can be done with simple formulas:
 
-- **体格**: BMI、BSA (Du Bois / Mosteller)、IBW (Devine)
-- **電解質補正**: 補正Ca (Payne)、補正Na、自由水欠乏量
-- **酸素化**: A-aDO2、P/F比
-- **加算系スコア**: CHA₂DS₂-VASc、HAS-BLED、Wells、**qSOFA**、CURB-65、NEWS2、Child-Pugh、GCS
-- **その他**: アニオンギャップ単独、HbA1c↔eAG変換、Holliday-Segar輸液量
+- **Body metrics**: BMI, BSA (Du Bois / Mosteller), IBW (Devine)
+- **Electrolyte corrections**: Corrected Ca (Payne), corrected Na, free water deficit
+- **Oxygenation**: A-aDO2, P/F ratio
+- **Additive scores**: CHA2DS2-VASc, HAS-BLED, Wells, **qSOFA**, CURB-65, NEWS2, Child-Pugh, GCS
+- **Other**: Anion gap alone, HbA1c to eAG conversion, Holliday-Segar fluid calculation
 
-これらは式と入力値が揃えば内部の算術モジュールで正確に計算できる。
+These can be accurately calculated using the internal arithmetic module when the formula and input values are available.
 
-## 共通の入力単位ルール
+## Common Input Unit Rules
 
-利用者の入力単位がこれと異なる場合、**変換は呼び出し側で行ってからtoolに渡す** (toolは下記の単位で受ける前提で実装されている)。
+If the user's input units differ from these, **convert before passing to the tool** (the tools are implemented to accept the units below).
 
-| 項目 | 単位 |
+| Item | Unit |
 |------|------|
-| クレアチニン (Cr) | mg/dL |
-| ビリルビン | mg/dL |
-| アルブミン | g/dL |
+| Creatinine (Cr) | mg/dL |
+| Bilirubin | mg/dL |
+| Albumin | g/dL |
 | Na, K, Cl | mEq/L |
 | Ca | mg/dL |
 | BUN | mg/dL |
-| 血糖 | mg/dL |
-| 血小板 | **×10⁴/µL (日本表記)** |
-| 白血球 | **×10³/µL** |
+| Blood glucose | mg/dL |
+| Platelets | **x10^4/uL (Japanese notation)** |
+| WBC | **x10^3/uL** |
 | Hb, Hct | g/dL, % |
-| 体重 | kg |
-| 体温 | ℃ |
-| 血ガス (PaO2, PaCO2) | mmHg |
+| Body weight | kg |
+| Body temperature | degrees C |
+| Blood gas (PaO2, PaCO2) | mmHg |
 | HCO3 | mEq/L |
 | AST, ALT, LDH | U/L |
-| FDP, D-dimer | µg/mL |
+| FDP, D-dimer | ug/mL |
 
-特に**血小板の単位**は、海外標準 (×10⁹/L) ではなく**日本臨床表記 (×10⁴/µL)** で受ける。利用者が「血小板 8万」と言ったら `8.0` を渡す。
+In particular, **platelet units** are accepted in **Japanese clinical notation (x10^4/uL)**, not the international standard (x10^9/L). If the user says "platelets 80,000," pass `8.0`.
 
-## 各関数の使い方とコツ
+## Usage and Tips for Each Function
 
 ### `calc_egfr_ckdepi2021`
 
-CKD-EPI 2021 (race-free) 式によるeGFR。CKDステージ判定込み。
+eGFR using the CKD-EPI 2021 (race-free) equation. Includes CKD stage determination.
 
-- `japanese_coefficient=True` で日本人補正係数 (×0.813) を適用
-- 北大病院での標準は要確認 (初期値は `False`)
-- **薬剤投与量調整には本値ではなく `calc_ccr_cockcroft_gault` を使う** (eGFRは体表面積補正済みの相対値、薬物動態は絶対値が要る)
+- Set `japanese_coefficient=True` to apply the Japanese correction factor (x0.813)
+- The standard at Hokkaido University Hospital requires confirmation (default is `False`)
+- **For drug dosage adjustment, use `calc_ccr_cockcroft_gault` instead of this value** (eGFR is a body surface area-adjusted relative value; pharmacokinetics require absolute values)
 
 ### `calc_egfr_jsn`
 
-日本腎臓学会2009の推算式によるeGFR。**国内では本式が広く使用されている**ため、利用者から「eGFR」とだけ言われた時は CKD-EPI ではなく本式を選ぶほうが伝統的に妥当な場面が多い。
+eGFR using the Japanese Society of Nephrology 2009 estimation formula. **This formula is widely used domestically**, so when a user simply says "eGFR," choosing this over CKD-EPI is traditionally more appropriate in many cases.
 
-- 酵素法のCrを前提とする (Jaffe法は不適)
-- CKD-EPI 2021と数値はやや異なる。両方提示することも可
-- 薬剤投与量調整には本値ではなく Cockcroft-Gault を使う点は他のeGFR式と同じ
+- Assumes enzymatic Cr (Jaffe method is not suitable)
+- Values differ slightly from CKD-EPI 2021. Presenting both is also acceptable
+- Same as other eGFR equations: use Cockcroft-Gault for drug dosage adjustment
 
 ### `calc_ccr_cockcroft_gault`
 
-薬剤投与量調整用のCCr (絶対値)。
+CCr (absolute value) for drug dosage adjustment.
 
-- 体重は通常実体重を使うが、**肥満例 (BMI≥30) では IBW あるいは AdjBW での再計算が望ましい**。利用者にその旨を伝えた上で、必要なら IBW を内部で計算してから渡す
-- 痩せ型でもIBWのほうが安全な薬剤がある (アミノグリコシド等)
+- Actual body weight is typically used, but **for obese patients (BMI >= 30), recalculation using IBW or AdjBW is recommended**. Inform the user accordingly and, if needed, calculate IBW internally before passing
+- IBW may be safer even in lean patients for certain drugs (aminoglycosides, etc.)
 
 ### `calc_free_water_deficit`
 
-高Na血症における自由水欠乏量。
+Free water deficit in hypernatremia.
 
-- **Na ≤ 目標Na (デフォルト140) の時はエラーを返す** (欠乏なしのため)
-- 65歳以上はTBW比率が下がる (男性0.6→0.5、女性0.5→0.45) ので年齢を必ず渡す
-- 戻り値の `suggested_24h_volume_L` は**慢性高Na想定で全欠乏量の半分**を提案している (急性なら全量補正可、慢性なら脳脱髄リスク回避のため緩徐補正)
-- 急性/慢性の鑑別は利用者の臨床判断に委ねる。本関数は計算のみ
-- 輸液製剤の自由水含量に注意して輸液選択をすること (5%ブドウ糖=100%、1/2生食=50%、生食=0%)
+- **Returns an error when Na <= target Na (default 140)** (no deficit)
+- For ages 65 and above, the TBW ratio decreases (male 0.6 to 0.5, female 0.5 to 0.45), so always pass age
+- The return value `suggested_24h_volume_L` **assumes chronic hypernatremia and proposes half of the total deficit** (for acute cases the full amount may be corrected; for chronic cases, gradual correction to avoid osmotic demyelination risk)
+- Acute/chronic differentiation is left to the user's clinical judgment. This function only calculates
+- When selecting IV fluids, note the free water content of each solution (5% dextrose = 100%, half-normal saline = 50%, normal saline = 0%)
 
 ### `calc_meld_na`
 
-UNOS 2016 MELD-Na式。透析補正 (過去7日以内2回以上の透析または24h CRRT) に対応。
+UNOS 2016 MELD-Na formula. Supports dialysis adjustment (2 or more sessions within the past 7 days or 24h CRRT).
 
-- Bilirubin/INR/Crが1.0未満の場合は1.0にクリップされる (式の仕様)
-- Naは125-137にクリップ
-- **MELD≤11 の場合は MELD-Na = MELD** となる (式の仕様)
-- MELD 3.0 (2023年〜) は未実装。最新版が要る場合は明示する
+- Bilirubin/INR/Cr values below 1.0 are clipped to 1.0 (formula specification)
+- Na is clipped to 125-137
+- **When MELD <= 11, MELD-Na = MELD** (formula specification)
+- MELD 3.0 (2023 onward) is not implemented. Specify if the latest version is needed
 
 ### `calc_albi_grade`
 
-肝予備能評価 (HCC等で頻用)。
+Hepatic reserve assessment (frequently used in HCC, etc.).
 
-- 入力単位は **g/dL と mg/dL** で受ける (内部で µmol/L、g/L に変換)
-- Grade 1 (最良) / 2 (中間) / 3 (最不良) を返す
+- Input units are accepted in **g/dL and mg/dL** (internally converted to umol/L and g/L)
+- Returns Grade 1 (best) / 2 (intermediate) / 3 (worst)
 
 ### `calc_fib4`
 
-慢性肝炎 (HCV/HBV/NAFLD) の線維化スクリーニング。
+Fibrosis screening for chronic hepatitis (HCV/HBV/NAFLD).
 
-- **急性肝障害には適用しない** (急性炎症でASTが大きく上昇するとFIB-4も誤って上昇)
-- 65歳未満と以上で閾値が違う (NAFLDガイドライン準拠で自動切替)
+- **Do not apply to acute liver injury** (FIB-4 is falsely elevated when AST rises significantly in acute inflammation)
+- Thresholds differ for patients under vs. 65 and older (auto-switched per NAFLD guideline compliance)
 
 ### `calc_apache2`
 
-ICU入室24時間以内の**最悪値**で算出する。
+Calculate using the **worst values** within 24 hours of ICU admission.
 
-- 酸素化スコアは **FiO2≥0.5 なら A-aDO2、FiO2<0.5 なら PaO2** を渡す。両方None の場合エラー
-- pH代わりに HCO3 で代用するスコアは未実装 (動脈血ガスがあれば pH 優先)
-- `chronic_organ_failure` は重度慢性臓器不全または免疫不全あり (透析患者、肝硬変Child-C、慢性呼吸不全O2依存、化学療法中等)
-- **死亡率推定値は返さない** (疾患カテゴリ別の係数表が必要なため)。スコアのみ提示し、判断は担当医に委ねる
+- Oxygenation score: **pass A-aDO2 when FiO2 >= 0.5, or PaO2 when FiO2 < 0.5**. Error if both are None
+- Substituting HCO3 for pH in the score is not implemented (prioritize pH if arterial blood gas is available)
+- `chronic_organ_failure` indicates severe chronic organ failure or immunocompromised status (dialysis patients, Child-C cirrhosis, chronic respiratory failure with O2 dependence, on chemotherapy, etc.)
+- **Does not return estimated mortality** (requires disease category-specific coefficient tables). Present the score only and defer judgment to the attending physician
 
 ### `calc_sofa`
 
-Sepsis-3 の敗血症診断 (感染症 + SOFA急上昇≥2点) や ICU での経時的臓器障害評価に使用。**入力項目数が多く現場では手計算が面倒なため、tool化の価値が高い**。
+Used for Sepsis-3 sepsis diagnosis (infection + acute SOFA increase >= 2 points) and serial organ dysfunction assessment in the ICU. **The large number of input items makes manual calculation cumbersome in practice, giving high value to tool-based calculation**.
 
-- 6臓器 (呼吸、凝固、肝、循環、中枢、腎) 各 0-4点、合計 0-24点
-- **欠損項目はスコアに含めず None として返す**。全項目が揃わない場合は利用者にその旨を伝え、補完後に再計算を促す
-- 呼吸スコアは P/F<200 で機械換気の有無により点数が変わる (`mechanical_ventilation` を必ず指定)
-- 循環スコアは昇圧剤の種類と用量で決まる。`vasopressor` の選択肢:
-  - `none`: 昇圧剤なし → MAP<70 で1点、≥70 で0点
-  - `dopamine_low`: ドパミン ≤5 µg/kg/min または ドブタミンのみ → 2点
-  - `dopamine_mid`: ドパミン 5.1-15 または ノルアド/エピネ ≤0.1 → 3点
-  - `dopamine_high`: ドパミン >15 または ノルアド/エピネ >0.1 → 4点
-- 腎スコアは Cr と尿量で別々に判定し、**高い方を採用** (どちらか片方しかなければそれを採用)
-- 経時的評価ではベースラインからの上昇幅 (ΔSOFA) が重要。利用者に「初回ですか? 経時評価ですか?」と確認するのも有用
-- qSOFA (3項目の単純加算) は本tool群に含まれない。算術モジュールで対応する
+- 6 organs (respiration, coagulation, hepatic, cardiovascular, CNS, renal) each scored 0-4, total 0-24
+- **Missing items are excluded from the score and returned as None**. When not all items are available, inform the user and encourage recalculation after completion
+- Respiratory score changes at P/F < 200 depending on mechanical ventilation status (always specify `mechanical_ventilation`)
+- Cardiovascular score is determined by vasopressor type and dose. `vasopressor` options:
+  - `none`: No vasopressors; MAP < 70 = 1 point, >= 70 = 0 points
+  - `dopamine_low`: Dopamine <= 5 ug/kg/min or dobutamine only = 2 points
+  - `dopamine_mid`: Dopamine 5.1-15 or norepinephrine/epinephrine <= 0.1 = 3 points
+  - `dopamine_high`: Dopamine > 15 or norepinephrine/epinephrine > 0.1 = 4 points
+- Renal score is determined separately by Cr and urine output, **the higher score is adopted** (if only one is available, it is used)
+- For serial assessment, the change from baseline (delta-SOFA) is important. It may be useful to ask the user "Is this the initial assessment or a follow-up?"
+- qSOFA (simple addition of 3 items) is not included in this tool set. Use the arithmetic module
 
 ### `calc_glasgow_blatchford`
 
-上部消化管出血のリスク層別 (内視鏡前のトリアージ)。
+Risk stratification for upper GI bleeding (pre-endoscopy triage).
 
-- **GBS=0 は外来管理候補**、GBS≥7 は介入必要となることが多い
-- BUNと性別別Hb閾値が点数化のキモなので、利用者がこれらを言わないなら聞き返す
+- **GBS = 0 is a candidate for outpatient management**; GBS >= 7 often requires intervention
+- BUN and sex-specific Hb thresholds are key to scoring, so ask the user if they have not been provided
 
 ### `calc_ranson_criteria`
 
-急性膵炎の重症度。**入院時5項目と48時間後6項目を別々に呼ぶこと** (`timing="admission"` または `"48h"`)。
+Acute pancreatitis severity. **Call separately for the 5 admission items and 6 items at 48 hours** (`timing="admission"` or `"48h"`).
 
-- 入院時 + 48時間後の合計≥3 で重症膵炎を疑う
-- 胆石性膵炎は閾値が異なる (`gallstone_etiology=True`)
-- **国内では JSS-CT grade / 厚労省重症度判定基準のほうが標準**。Ransonは欧米由来であることを利用者に伝える
+- A combined score of admission + 48-hour >= 3 suggests severe pancreatitis
+- Thresholds differ for gallstone pancreatitis (`gallstone_etiology=True`)
+- **In Japan, JSS-CT grade / JMHW severity criteria are the standard**. Inform the user that Ranson originated in the West
 
 ### `calc_dic_score`
 
-3つの基準から選択:
+Select from three criteria:
 
-- `criteria="isth_overt"`: ISTH overt DIC (国際標準、≥5でDIC)
-- `criteria="jmhw_hematologic"`: 厚労省 造血障害型 (≥4、白血病等)
-- `criteria="jmhw_non_hematologic"`: 厚労省 非造血障害型 (≥7)
+- `criteria="isth_overt"`: ISTH overt DIC (international standard, >= 5 for DIC)
+- `criteria="jmhw_hematologic"`: JMHW hematologic type (>= 4, for leukemia, etc.)
+- `criteria="jmhw_non_hematologic"`: JMHW non-hematologic type (>= 7)
 
-選び方:
+How to choose:
 
-- 白血病、骨髄異形成症候群、化学療法後骨髄抑制等の**造血器腫瘍/造血障害がある**場合 → `jmhw_hematologic`
-- それ以外で**国内基準を求められた**場合 → `jmhw_non_hematologic`
-- **国際比較や論文用途**なら `isth_overt`
+- For **hematologic malignancies/hematopoietic disorders** such as leukemia, myelodysplastic syndrome, or post-chemotherapy bone marrow suppression: `jmhw_hematologic`
+- For other cases when **domestic criteria are requested**: `jmhw_non_hematologic`
+- For **international comparison or publication purposes**: `isth_overt`
 
-ISTH の fibrin marker 閾値は実装で簡略化している (≥25=3点、≥5=2点)。施設のFDPキットによってカットオフが異なるため、境界例では注意を促す。
+The ISTH fibrin marker threshold is simplified in the implementation (>= 25 = 3 points, >= 5 = 2 points). Since cutoffs vary by facility's FDP kit, alert the user in borderline cases.
 
 ### `calc_acid_base_analysis`
 
-血ガスの統合解析。一次性異常判定 + 代償予測 + AG計算を一発で行う。
+Integrated analysis of blood gas. Performs primary disorder determination + compensation prediction + AG calculation in one call.
 
-- pH、pCO2、HCO3 は必須
-- Na、Cl があれば AG を計算
-- アルブミン (g/dL) があれば補正AGも計算 (低アルブミン血症で見逃されやすい高AGを検出)
-- 戻り値の `compensation_status` が `appropriate_compensation` 以外なら混合性障害を疑う旨を提示
+- pH, pCO2, HCO3 are required
+- If Na and Cl are available, AG is calculated
+- If albumin (g/dL) is available, corrected AG is also calculated (detects high AG masked by hypoalbuminemia)
+- If the return value `compensation_status` is anything other than `appropriate_compensation`, present the possibility of a mixed disorder
 
-## 戻り値の扱い方
+## Handling Return Values
 
-各関数は**辞書を返す** (酸塩基のみ複合)。各値の解釈・閾値情報は戻り値に含まれているので、追加で暗算する必要はない。
+Each function **returns a dictionary** (acid-base returns a compound structure). Interpretation and threshold information for each value are included in the return value, so no additional mental arithmetic is needed.
 
-利用者への提示の例:
+Example presentation to the user:
 
-> eGFR (CKD-EPI 2021) は **67.1 mL/min/1.73m²**、CKDステージ G2 です。
-> 日本人補正係数を適用した場合は 54.6 mL/min/1.73m² (G3a) となります。
-> 薬剤投与量調整目的であれば、別途 Cockcroft-Gault によるCCr (絶対値) もご確認ください。
+> eGFR (CKD-EPI 2021) is **67.1 mL/min/1.73m2**, CKD stage G2.
+> With the Japanese correction factor applied, it is 54.6 mL/min/1.73m2 (G3a).
+> If the purpose is drug dosage adjustment, please also check CCr (absolute value) via Cockcroft-Gault.
 
-## 落とし穴と注意
+## Pitfalls and Cautions
 
-1. **単位の取り違え**: 上の単位ルール表は厳守。利用者が異なる単位で言ってきた場合は変換してから渡す
-2. **適応外**: FIB-4を急性肝炎に使う、Ransonを慢性膵炎に使う等、適応を外して呼ばないこと
-3. **複数の式の併存**: eGFRはCKD-EPI 2021 / 日本人GFR推算式 (JSN) / MDRD等が併存する。施設標準が決まっていれば従う、不明なら利用者に確認する
-4. **スコアは判断材料に過ぎない**: APACHE II 19 だから死亡率○%、と確定的に述べないこと。担当医の総合判断を促す
-5. **利用者が「だいたいの値」しか言わない場合**: 暗算で済ませず、必ずtoolに渡してから提示する。ただし入力値が概数であることは戻り値の提示時に明記する
+1. **Unit mix-up**: Strictly follow the unit rules table above. If the user provides values in different units, convert before passing
+2. **Off-label use**: Do not use FIB-4 for acute hepatitis, Ranson for chronic pancreatitis, etc.
+3. **Coexistence of multiple formulas**: Multiple eGFR formulas coexist (CKD-EPI 2021 / JSN / MDRD, etc.). Follow the facility standard if established; otherwise, confirm with the user
+4. **Scores are only one input for decision-making**: Do not state definitively, e.g., "APACHE II 19 means X% mortality." Encourage the attending physician's comprehensive judgment
+5. **When the user provides only approximate values**: Do not rely on mental arithmetic; always pass values to the tool and present the result. However, note in the presentation that input values were approximate
 
-## 関連SKILL
+## Related SKILL
 
-本SKILLでカバーしない計算系で、別SKILLとして実装されるもの:
+Calculation-related items not covered by this SKILL that are implemented as separate SKILLs:
 
-- **`vancomycin-tdm`**: バンコマイシン TDM。情報聴取 → AUC₂₄計算 → 濃度-時間曲線プロット → 用量調整提案を Pyodide ワークフローで行う。tool ではなく Pyodide での直接計算とプロットが特徴
-- (今後、アミノグリコシド TDM、抗てんかん薬 TDM 等を同パターンで追加予定)
+- **`vancomycin-tdm`**: Vancomycin TDM. Performs history gathering, AUC24 calculation, concentration-time curve plotting, and dose adjustment suggestions via a Pyodide workflow. Its distinguishing feature is direct calculation and plotting in Pyodide rather than using tools
+- (Aminoglycoside TDM, antiepileptic drug TDM, etc. are planned for addition in the same pattern)
 
-## 拡張候補 (未実装)
+## Extension Candidates (Not Implemented)
 
-以下は本実装には含まれていない。利用者から要望があれば開発チームに伝える:
+The following are not included in this implementation. Relay to the development team if requested by users:
 
-- GRACE、TIMI、PESI/sPESI、BISAP
-- Calvert式 (カルボプラチンAUC)
-- MELD 3.0 (UNOS 2023〜)
-- Na補正速度の上限警告
+- GRACE, TIMI, PESI/sPESI, BISAP
+- Calvert formula (carboplatin AUC)
+- MELD 3.0 (UNOS 2023 onward)
+- Na correction rate upper limit warning
 
-## フィードバック
+## Feedback
 
-`calc_*` の出力に違和感がある、閾値が施設標準と合わない、追加してほしい計算がある等の場合、開発チームへ:
+If `calc_*` output seems off, thresholds do not match the facility standard, or additional calculations are desired, contact the development team:
 
-- メール: prism-hu-office@pop.med.hokudai.ac.jp
-- 内線: 5352
+- Email: prism-hu-office@pop.med.hokudai.ac.jp
+- Extension: 5352

@@ -37,18 +37,18 @@ TASKS = {
     "jcsts": "JCSTS",
 }
 
-# Tasks included in --task all. 除外:
-#   - smdis: 15,360 行 / ~55時間で他の一桁多く、SNS スタイル(模擬ツイート)で
-#            院内利用と乖離。
-#   - jcsts: 3,670 行 / ~20時間。文意味類似度判定は他タスクで間接的に測れる、
-#            重要度低 (★) でコスト過大。
-# 個別に必要な時は明示的に --task smdis / --task jcsts で回す。
+# Tasks included in --task all. Excluded:
+#   - smdis: 15,360 rows / ~55 hours, an order of magnitude larger than others;
+#            SNS-style (simulated tweets), divergent from hospital use cases.
+#   - jcsts: 3,670 rows / ~20 hours. Sentence semantic similarity can be
+#            measured indirectly by other tasks; low priority, excessive cost.
+# When needed individually, run explicitly with --task smdis / --task jcsts.
 ALL_TASKS = [
     "jmmlu_med",
     "crade",
     "rrtnm",
-    # "smdis",  # 大規模・低優先
-    # "jcsts",  # 重要度低、~20時間コスト
+    # "smdis",  # large-scale, low priority
+    # "jcsts",  # low priority, ~20 hour cost
 ]
 
 # Linear-weighted κ for ordinal labels (per JMED-LLM official leaderboard).
@@ -66,9 +66,9 @@ OPTION_LETTERS = "ABCDEF"
 EXTRACT_RE = re.compile(r"<answer>(.*?)</answer>", re.DOTALL)
 
 INSTRUCTION = (
-    "次の問題について、提示された選択肢から最も適切なものを1つ選び、"
-    "選択肢の記号({letters})だけを <answer></answer> タグで囲んで答えてください "
-    "(例: <answer>A</answer>)。"
+    "For the following question, select the single most appropriate choice from "
+    "the options provided, and return only the choice letter ({letters}) enclosed "
+    "in <answer></answer> tags (e.g., <answer>A</answer>)."
 )
 
 
@@ -155,7 +155,7 @@ def build_messages(row: dict[str, str]) -> list[dict[str, Any]]:
     letters = available_letters(row)
     options = "\n".join(f"{L}. {row[f'option{L}']}" for L in letters)
     instruction = INSTRUCTION.format(letters="/".join(letters))
-    user = f"{instruction}\n\n問題: {row['question']}\n\n選択肢:\n{options}"
+    user = f"{instruction}\n\nQuestion: {row['question']}\n\nChoices:\n{options}"
     return [{"role": "user", "content": user}]
 
 
@@ -183,8 +183,8 @@ def run_task(
     if limit:
         rows = rows[:limit]
 
-    # `thinking` (Kimi/V3.2) と `enable_thinking` (GLM) を両方送る。
-    # 関係ないキーは各モデルの template が無視する。
+    # Send both `thinking` (Kimi/V3.2) and `enable_thinking` (GLM).
+    # Irrelevant keys are ignored by each model's template.
     extra_body: dict[str, Any] = {
         "chat_template_kwargs": {
             "thinking": not no_think,

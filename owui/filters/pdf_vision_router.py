@@ -4,24 +4,24 @@ author: Ken Enda
 version: 0.7.0
 required_open_webui_version: 0.5.0
 description: |
-  PDF の処理経路を以下のルールでルーティングする。
+  Routes PDF processing according to the following rules:
 
-    テキスト無               : 全ページ画像化 + VLM (image_only、上限なし)
-    テキスト有 + 30p 以内    : 全ページ画像化 + VLM + Docling (hybrid)
-    テキスト有 + 31p 以上    : Docling のみ (text_only)
+    No text layer          : Rasterize all pages + VLM (image_only, no page limit)
+    Has text + <=30 pages  : Rasterize all pages + VLM + Docling (hybrid)
+    Has text + 31+ pages   : Docling only (text_only)
 
-  Docling の結果は常にそのまま残す (_exclude を呼ばない)。
-  どの経路に乗ったかはモデル向け注記で透けて見える。
+  Docling results are always preserved (_exclude is not called).
+  Which route was taken is visible via model-directed notes.
 
 changelog:
-  0.7.0: テキスト無は上限撤廃、テキスト有のキャップを 10p→30p に。
-         text_only 経路でもモデル向け注記を入れて状況を明示。注記全体を簡潔化。
-  0.6.0: ルール変更。テキスト無は枚数制限なしで全画像化。Docling は常に残す。
-  0.5.0: ハイブリッドモード導入。テキストありでも 5p 以内なら VLM 併用。
-  0.4.0: ログを print に統一、messages 全文ダンプ追加。
-  0.3.0: body['files'][i]['file']['path'] を直接利用。
-  0.2.0: ファイル取得を DB 直読みに変更。
-  0.1.0: 初版。
+  0.7.0: No-text route removes page limit; text-present cap raised from 10p to 30p.
+         text_only route also injects a model-directed note for clarity. Notes simplified overall.
+  0.6.0: Rule change. No-text rasterizes all pages without limit. Docling always preserved.
+  0.5.0: Hybrid mode introduced. Text-present PDFs also use VLM if <=5 pages.
+  0.4.0: Unified logging to print, added full messages dump.
+  0.3.0: Use body['files'][i]['file']['path'] directly.
+  0.2.0: Changed file retrieval to direct DB read.
+  0.1.0: Initial version.
 """
 
 import io
@@ -39,8 +39,8 @@ logger = logging.getLogger(__name__)
 
 
 def _p(msg: str, level: str = "info"):
-    """ログ出力。OpenWebUI は loguru で標準 logging を intercept しているので、
-    logger.info/warning/error を呼べばよい。"""
+    """Log output. OpenWebUI intercepts standard logging via loguru,
+    so calling logger.info/warning/error is sufficient."""
     getattr(logger, level)(f"[PDF-Router] {msg}")
 
 
@@ -48,28 +48,30 @@ class Filter:
     class Valves(BaseModel):
         priority: int = Field(
             default=0,
-            description="複数 Filter が同じモデルにかかる場合の優先順位 (低いほど先)",
+            description="Priority when multiple Filters apply to the same model (lower = first)",
         )
         text_layer_char_threshold: int = Field(
             default=100,
             description=(
-                "PDF 全ページ抽出後の総文字数がこれ未満ならテキストレイヤなしと判定"
+                "If total characters extracted from all PDF pages are below this, "
+                "the PDF is considered to have no text layer"
             ),
         )
         hybrid_page_limit: int = Field(
             default=30,
             description=(
-                "テキスト有の場合、このページ数以下なら VLM 画像化も併用 (hybrid)。"
-                "超えた場合は Docling のみ (text_only)。テキスト無の場合は制限なし。"
+                "For text-present PDFs, VLM rasterization is also used (hybrid) if page count "
+                "is at or below this limit. Above this, Docling only (text_only). "
+                "No limit for text-absent PDFs."
             ),
         )
         rasterize_dpi: int = Field(
             default=200,
-            description="ページラスタライズ DPI。高いほど精度↑、トークン消費↑",
+            description="Page rasterization DPI. Higher = more accuracy, more token consumption",
         )
         dump_messages: bool = Field(
             default=False,
-            description="inlet 入口/出口で messages の要約をログに出す (デバッグ用)",
+            description="Dump messages summary at inlet entry/exit (for debugging)",
         )
 
     def __init__(self):
@@ -77,7 +79,7 @@ class Filter:
         self.valves = self.Valves()
 
     # ============================================================
-    # messages 要約ダンプ (縮約版)
+    # Messages summary dump (abbreviated)
     # ============================================================
     def _dump_messages(self, body: dict, when: str):
         msgs = body.get("messages", [])
@@ -111,7 +113,7 @@ class Filter:
         _p(f"messages ({when}, n={len(msgs)}): {' '.join(summary)}")
 
     # ============================================================
-    # body から PDF を集める
+    # Collect PDFs from body
     # ============================================================
     def _collect_pdf_files(self, body: dict) -> list[dict]:
         seen_ids = set()
@@ -136,7 +138,7 @@ class Filter:
                 if not file_id or not path or file_id in seen_ids:
                     if file_id and file_id not in seen_ids:
                         _p(
-                            f"スキップ {filename!r}: id/path 不足 "
+                            f"Skipping {filename!r}: missing id/path "
                             f"(id={file_id}, path={path!r})",
                             level="warning",
                         )
@@ -148,7 +150,7 @@ class Filter:
         return results
 
     # ============================================================
-    # PDF 解析
+    # PDF analysis
     # ============================================================
     def _analyze_pdf(self, pdf_bytes: bytes) -> tuple[bool, int, int]:
         """returns (has_text, n_pages, total_chars)"""
@@ -161,15 +163,15 @@ class Filter:
                     txt = page.extract_text() or ""
                     total_chars += len(txt.strip())
                 except Exception:
-                    pass  # ページ単位の例外は黙って継続
+                    pass  # Silently continue on per-page exceptions
             has_text = total_chars >= self.valves.text_layer_char_threshold
             return has_text, n_pages, total_chars
         except Exception as e:
-            _p(f"PDF 解析失敗、画像 PDF とみなす: {e}", level="warning")
+            _p(f"PDF analysis failed, treating as image PDF: {e}", level="warning")
             return False, 0, 0
 
     # ============================================================
-    # ラスタライズ
+    # Rasterization
     # ============================================================
     def _rasterize(self, pdf_bytes: bytes) -> list[str]:
         images = convert_from_bytes(
@@ -186,7 +188,7 @@ class Filter:
         return urls
 
     # ============================================================
-    # 最後の user メッセージに画像・注記を追加
+    # Inject images and notes into the last user message
     # ============================================================
     def _inject(
         self,
@@ -196,7 +198,7 @@ class Filter:
     ):
         messages = body.get("messages", [])
         if not messages:
-            _p("messages が空、注入できず", level="warning")
+            _p("messages is empty, cannot inject", level="warning")
             return
 
         last_idx = None
@@ -205,7 +207,7 @@ class Filter:
                 last_idx = i
                 break
         if last_idx is None:
-            _p("user メッセージが見つからず、注入できず", level="warning")
+            _p("No user message found, cannot inject", level="warning")
             return
 
         last_msg = messages[last_idx]
@@ -223,7 +225,7 @@ class Filter:
                 {
                     "type": "text",
                     "text": (
-                        "\n\n[システム注記 / PDF Vision Router]\n" + "\n".join(notes)
+                        "\n\n[System Note / PDF Vision Router]\n" + "\n".join(notes)
                     ),
                 }
             )
@@ -241,7 +243,7 @@ class Filter:
     ) -> dict:
         try:
             if self.valves.dump_messages:
-                self._dump_messages(body, when="inlet 入口")
+                self._dump_messages(body, when="inlet entry")
 
             pdf_files = self._collect_pdf_files(body)
             if not pdf_files:
@@ -260,29 +262,29 @@ class Filter:
                 fname = c["name"]
                 path = c["path"]
 
-                # 1. ファイル読み込み
+                # 1. Read file
                 if not os.path.exists(path):
-                    _p(f"{fname}: path 存在せず → Docling 任せ", level="error")
+                    _p(f"{fname}: path does not exist -> leaving to Docling", level="error")
                     continue
                 try:
                     with open(path, "rb") as f:
                         pdf_bytes = f.read()
                 except Exception as e:
-                    _p(f"{fname}: 読み込み失敗 → Docling 任せ: {e}", level="error")
+                    _p(f"{fname}: read failed -> leaving to Docling: {e}", level="error")
                     continue
 
-                # 2. 解析
+                # 2. Analysis
                 has_text, n_pages, total_chars = self._analyze_pdf(pdf_bytes)
                 if n_pages == 0:
-                    _p(f"{fname}: 解析不能 → Docling 任せ", level="warning")
+                    _p(f"{fname}: analysis failed -> leaving to Docling", level="warning")
                     continue
 
                 # ============================================
-                # ルーティング
-                #   テキスト無               → 画像化 (image_only、上限なし)
-                #   テキスト有 & ≤ N         → 画像化 (hybrid)
-                #   テキスト有 & > N         → Docling のみ (text_only)
-                #   Docling は常に残す
+                # Routing
+                #   No text          -> Rasterize (image_only, no page limit)
+                #   Has text & <= N  -> Rasterize (hybrid)
+                #   Has text & > N   -> Docling only (text_only)
+                #   Docling is always preserved
                 # ============================================
                 limit = self.valves.hybrid_page_limit
 
@@ -292,8 +294,9 @@ class Filter:
                         f"(pages={n_pages}>{limit}, chars={total_chars})"
                     )
                     injected_notes.append(
-                        f"※ {fname} ({n_pages}p, {total_chars}字): 長尺のため "
-                        f"Docling 抽出のみ (画像化省略)。図表内文字・手書き・押印は未処理。"
+                        f"* {fname} ({n_pages}p, {total_chars} chars): Long document, "
+                        f"Docling extraction only (rasterization omitted). "
+                        f"Text in figures/tables, handwriting, and stamps are not processed."
                     )
                     continue
 
@@ -307,7 +310,7 @@ class Filter:
                     data_urls = self._rasterize(pdf_bytes)
                 except Exception as e:
                     _p(
-                        f"{fname}: ラスタライズ失敗 → Docling 任せ: {e}",
+                        f"{fname}: rasterization failed -> leaving to Docling: {e}",
                         level="error",
                     )
                     _p(traceback.format_exc(), level="error")
@@ -320,29 +323,31 @@ class Filter:
 
                 if has_text:
                     injected_notes.append(
-                        f"※ {fname} ({n_pages}p, {total_chars}字): "
-                        f"Docling 抽出 + 全ページ画像を提示。"
-                        f"図表内文字・手書き・押印は画像から補完。原本確認を案内。"
+                        f"* {fname} ({n_pages}p, {total_chars} chars): "
+                        f"Docling extraction + all pages rasterized. "
+                        f"Supplement text in figures/tables, handwriting, and stamps from images. "
+                        f"Advise original document verification."
                     )
                 else:
                     injected_notes.append(
-                        f"※ {fname} ({n_pages}p): スキャン PDF、全ページ画像のみ提示。原本確認を案内。"
+                        f"* {fname} ({n_pages}p): Scanned PDF, all pages provided as images only. "
+                        f"Advise original document verification."
                     )
-                # Docling は常に残す → _exclude は呼ばない
+                # Docling is always preserved -> _exclude is not called
 
-            # 注入
+            # Injection
             if injected_images or injected_notes:
                 _p(
-                    f"注入: 画像 {len(injected_images)} 枚, "
-                    f"注記 {len(injected_notes)} 件"
+                    f"Injection: {len(injected_images)} image(s), "
+                    f"{len(injected_notes)} note(s)"
                 )
                 self._inject(body, injected_images, injected_notes)
                 if self.valves.dump_messages:
-                    self._dump_messages(body, when="inlet 出口")
+                    self._dump_messages(body, when="inlet exit")
 
             return body
 
         except Exception as e:
-            _p(f"inlet 全体で例外: {e}", level="error")
+            _p(f"Exception in entire inlet: {e}", level="error")
             _p(traceback.format_exc(), level="error")
             return body

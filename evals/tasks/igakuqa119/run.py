@@ -1,16 +1,16 @@
-"""Runner for IgakuQA119 (naoto-iwase/IgakuQA119) — 第119回医師国家試験。
+"""Runner for IgakuQA119 (naoto-iwase/IgakuQA119) — 119th National Medical Licensing Exam.
 
 400 problems / blocks A-F / 500-pt scale (B/E Q26-50 = 3pt, others = 1pt).
 Prompt format mirrors `naoto-iwase/IgakuQA119` `src/llm_solver.py` (system +
-`answer:`/`confidence:`/`explanation:` 行) so results are directly comparable
+`answer:`/`confidence:`/`explanation:` lines) so results are directly comparable
 to the public leaderboard.
 
 Vision auto-probe: at start of run, sends one synthetic red-square PNG and
 asks for the color.
 - vision OK: image-bearing problems passed multimodally (vision mode)
-- vision NG / --no-vision: image-bearing problems も **テキストのみで盲解き** (LB 流儀)
-  → text-only モデルでも Overall 列が埋まり、公開LB の Preferred-MedLLM-Qwen-72B 等と
-    同 scope で並ぶ。
+- vision NG / --no-vision: image-bearing problems are solved **text-only blind** (LB convention)
+  -> Even text-only models get the Overall column filled, aligning with the same
+    scope as Preferred-MedLLM-Qwen-72B etc. on the public leaderboard.
 """
 
 from __future__ import annotations
@@ -43,26 +43,26 @@ REQUIRED_BLOCKS = {"119B", "119E"}
 LETTERS = "abcdefghij"
 
 SYSTEM_PROMPT = """\
-あなたは医師国家試験問題を解く優秀で論理的なアシスタントです。
-以下のルールを守って、問題文と選択肢(または数値入力の指示)を確認し、回答してください。
+You are an excellent and logical assistant that solves National Medical Licensing Examination questions.
+Follow the rules below to review the question text and choices (or numeric input instructions), and provide your answer.
 
-【ルール】
-1. 明示的な指示がない場合は、単一選択肢のみ選ぶ(例: "a", "d")。
-2. 「2つ選べ」「3つ選べ」などとあれば、その数だけ選択肢をアルファベット順で列挙する(例: "ac", "bd")。
-3. 選択肢が存在せず数値入力が求められる場合は、指定がない限りそのままの数値を答える(例: answer: 42)。
-4. 画像(has_image=True)は参考情報とし、特別な形式は不要。
-5. 不要な装飾やMarkdown記法は含めず、以下の形式に従って厳密に出力してください:
+[Rules]
+1. If there are no explicit instructions, select only a single choice (e.g., "a", "d").
+2. If the question says "select 2" or "select 3", list exactly that many choices in alphabetical order (e.g., "ac", "bd").
+3. If no choices are provided and numeric input is required, answer with the number as-is unless otherwise specified (e.g., answer: 42).
+4. Images (has_image=True) are reference information; no special format is needed.
+5. Do not include unnecessary formatting or Markdown notation. Strictly follow this output format:
 
-answer: [選んだ回答(単数/複数/数値)]
-confidence: [0.0〜1.0の確信度]
-explanation: [選択理由や重要な根拠を簡潔に]
+answer: [your answer (single/multiple/numeric)]
+confidence: [confidence level from 0.0 to 1.0]
+explanation: [brief reasoning and key evidence for your choice]
 
-【answerについて注意】
-- 問題は単数選択、複数選択、数値入力のいずれかであり、問題文からその形式を判断する。
-- 「どれか。」で終わる選択問題で数が明記されていない場合は、五者択一を意味するので選択肢を必ず1つだけ選び小文字のアルファベットで回答する。(単数選択)
-- 「2つ選べ」「3つ選べ」などと書いてある場合に限り、指定された数だけの複数選択肢を選び、小文字のアルファベット順(abcde順)に並び替えて列挙する。(複数選択)
-- 選択肢が存在しない場合は、小数や四捨五入など、問題文で特に指示があればそれに従い、選択肢記号ではなく数値を回答する。(数値入力)
-- 問題に関連しない余計な文は書かず、指定のキー(answer, confidence, explanation)を上記の出力に従って厳密に出力する。
+[Notes on the answer field]
+- Questions are one of: single-choice, multiple-choice, or numeric input. Determine the format from the question text.
+- For selection questions ending with a prompt to choose one where the number is not specified, it means single-choice from five options, so select exactly one choice and answer with a lowercase letter. (single-choice)
+- Only when the question explicitly says "select 2" or "select 3", select that many choices and list them sorted in lowercase alphabetical order (abcde order). (multiple-choice)
+- If no choices are provided, follow any specific instructions in the question (e.g., decimals, rounding) and answer with a number rather than a choice letter. (numeric input)
+- Do not write extraneous text unrelated to the question. Strictly output the specified keys (answer, confidence, explanation) following the format above.
 """
 
 ANSWER_PATTERN = re.compile(r"^\s*answer\s*[:：]\s*(.+?)\s*$", re.MULTILINE | re.IGNORECASE)
@@ -127,13 +127,13 @@ def build_messages(
 ) -> tuple[list[dict[str, Any]], list[str]]:
     is_numeric = not problem["choices"]
     if is_numeric:
-        text = f"問題:{problem['question']}\n\n回答を指定された形式で出力してください。"
+        text = f"Question: {problem['question']}\n\nPlease output your answer in the specified format."
     else:
         choices = "\n".join(problem["choices"])
         text = (
-            f"問題:{problem['question']}\n\n"
-            f"選択肢:\n{choices}\n\n"
-            f"回答を指定された形式で出力してください。"
+            f"Question: {problem['question']}\n\n"
+            f"Choices:\n{choices}\n\n"
+            f"Please output your answer in the specified format."
         )
 
     image_filenames: list[str] = []
@@ -180,7 +180,7 @@ def score(problem: dict[str, Any], extracted: str) -> tuple[bool, list[str]]:
 
 
 def points_for(problem_id: str, block: str) -> int:
-    """必修 (B/E) Q1-25 = 1pt, Q26-50 = 3pt。一般 (A/C/D/F) = 1pt。"""
+    """Required (B/E) Q1-25 = 1pt, Q26-50 = 3pt. General (A/C/D/F) = 1pt."""
     if block not in REQUIRED_BLOCKS:
         return 1
     suffix = problem_id[len(block):]
@@ -219,7 +219,7 @@ def probe_vision(base_url: str, model: str) -> bool:
     except Exception:
         return False
     full = ((r.reasoning_content or "") + " " + (r.content or "")).lower()
-    return "red" in full or "赤" in full or "まっか" in full
+    return "red" in full
 
 
 def run(
@@ -246,14 +246,14 @@ def run(
         probe_status = "vision OK → image_mode=vision" if vision_supported else "vision NG → image_mode=blind (LB default)"
     print(f"[probe] {probe_status}")
 
-    # LB convention: vision NG でも画像問題は除外せず blind (テキストのみ) で解かせる。
-    # text-only モデルでも Overall 列が埋まり、公開LB と同 scope。
-    # build_messages() 側で vision=False ならテキストのみ送る挙動。
+    # LB convention: even when vision NG, image questions are not excluded; they are
+    # solved blind (text-only). Even text-only models get the Overall column filled,
+    # matching the same scope as the public LB. build_messages() sends text-only when vision=False.
     if limit:
         problems = problems[:limit]
 
-    # `thinking` (Kimi/V3.2) と `enable_thinking` (GLM) を両方送る。
-    # 関係ないキーは各モデルの template が無視する。
+    # Send both `thinking` (Kimi/V3.2) and `enable_thinking` (GLM).
+    # Irrelevant keys are ignored by each model's template.
     extra_body: dict[str, Any] = {
         "chat_template_kwargs": {
             "thinking": not no_think,
@@ -418,7 +418,7 @@ def main() -> int:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--blocks", nargs="+", default=ALL_BLOCKS, choices=ALL_BLOCKS)
     parser.add_argument("--no-vision", action="store_true",
-                        help="vision auto-probe をスキップ。画像問題は blind (テキストのみ) で全問解答")
+                        help="Skip vision auto-probe. All image questions are answered blind (text-only)")
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--no-think", action="store_true")
     parser.add_argument("--max-tokens", type=int, default=32768)

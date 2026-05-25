@@ -96,7 +96,7 @@ def render_leaderboard(results: dict[str, dict[str, Any]], label: str) -> str:
             lb["no_image"]["accuracy_str"],
         ]) + " |")
         if not image_included:
-            out.append("\n(注: text-only モデルで画像問題は未評価のため Overall は `-`。No-Img 列で比較)\n")
+            out.append("\n(Note: text-only model; image questions were not evaluated, so Overall is `-`. Compare using the No-Img column)\n")
         else:
             out.append("")
 
@@ -124,7 +124,7 @@ def render_leaderboard(results: dict[str, dict[str, Any]], label: str) -> str:
             lb["text_only"]["accuracy_str"],
         ]) + " |")
         if not image_included:
-            out.append("\n(注: text-only モデルで画像問題は未評価のため Overall は `-`。Text-only 列で比較)\n")
+            out.append("\n(Note: text-only model; image questions were not evaluated, so Overall is `-`. Compare using the Text-only column)\n")
         else:
             out.append("")
 
@@ -149,7 +149,7 @@ def render_leaderboard(results: dict[str, dict[str, Any]], label: str) -> str:
             avg = "-"
         cells.append(avg)
         out.append("| " + " | ".join(cells) + " |\n")
-        out.append("(注: 上は MCQ 5タスクのみ。NER 系 (CRNER/RRNER/NRNER) は未実装)\n")
+        out.append("(Note: above covers MCQ 5 tasks only. NER tasks (CRNER/RRNER/NRNER) are not implemented)\n")
 
     return "\n".join(out) + "\n"
 

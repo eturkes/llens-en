@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # Usage: sglang-kimi-k2.6.sh [--no-eagle]
-#   default    : EAGLE3 speculative decoding 有効
-#   --no-eagle : speculative decoding なし (draft model 未配置時 / 切り分け用)
+#   default    : EAGLE3 speculative decoding enabled
+#   --no-eagle : no speculative decoding (when draft model not deployed / for troubleshooting)
 EAGLE=1
 for arg in "$@"; do
   case "$arg" in
@@ -29,20 +29,22 @@ args=(
 )
 
 if [[ "$EAGLE" == "1" ]]; then
-  # EAGLE3 + Kimi K2.6 (MLA) は 0.5.10 で long context が MLA chunked_kv_core 経路に
-  # 分岐すると flashattention_backend.py の MHA sub-call にある
+  # EAGLE3 + Kimi K2.6 (MLA) had a bug in 0.5.10 where long context branching into
+  # the MLA chunked_kv_core path would hit an assert in flashattention_backend.py's
+  # MHA sub-call:
   #   assert not get_global_server_args().disable_chunked_prefix_cache
-  # を踏んで落ちるバグがあり、以下 2 行を併用してた:
+  # This required the following 2 lines as a workaround:
   #     export SGLANG_ENABLE_SPEC_V2=1
   #     --disable-chunked-prefix-cache
-  # 0.5.12 では Spec V2 が default 化、かつ該当 if 分岐に
+  # In 0.5.12, Spec V2 became default, and the relevant if-branch gained a guard:
   #   not forward_batch.forward_mode.is_draft_extend(include_v2=True)
-  # ガードが追加されて EAGLE Spec V2 経路は除外される構造になったため両方外して検証中。
-  # 過去の dead-end (結果的に無効だったオプション。再度試さないための戒め):
-  #   --attention-backend flashmla : draft (Llama 系 EAGLE3) init で kv_lora_rank crash
-  #   --attention-backend fa3      : 同じ flashattention_backend 経由で同 assert
-  # 元バグは long context (実測ハーフコンテキスト級 ~130K) で再現するため検証も同スケールで。
-  # long context で落ちたら上記 2 行を復活させる。
+  # which excludes the EAGLE Spec V2 path, so both options removed for testing.
+  # Past dead-ends (options that turned out to be ineffective — kept as a reminder not to retry):
+  #   --attention-backend flashmla : crashes on kv_lora_rank during draft (Llama-based EAGLE3) init
+  #   --attention-backend fa3      : same assert via flashattention_backend
+  # The original bug reproduces at long context (~130K, roughly half-context scale),
+  # so verification must also be at that scale.
+  # If it crashes at long context, re-enable the 2 lines above.
   args+=(
     --speculative-algorithm EAGLE3
     --speculative-draft-model-path ./models/Kimi-K2.6-eagle3
